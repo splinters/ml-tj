@@ -1,0 +1,21 @@
+{
+ "target": "burden>=100 мг/кг (основная)",
+ "n_sites_labelled": 174,
+ "n_positive": 42,
+ "auc_oof": 0.753,
+ "found_top20": 12,
+ "random_top20": 4.8,
+ "found_top30": 17,
+ "random_top30": 7.2,
+ "share_positive_by_class": {
+  "высокий": 0.431,
+  "низкий": 0.103,
+  "средний": 0.19
+ },
+ "n_unlabelled_predicted": 16,
+ "unlabelled_by_class": {
+  "низкий": 9,
+  "высокий": 5,
+  "средний": 2
+ }
+}

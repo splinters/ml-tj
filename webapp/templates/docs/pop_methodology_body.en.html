@@ -1,0 +1,277 @@
+<h1>Pilot methodology: POPs site screening and risk to children (Tajikistan)</h1>
+<h2>Purpose of the pilot</h2>
+<p>The pilot shows that the information already collected on chemicals.tj is enough to rank obsolete pesticide (POPs) sites by risk to children and to identify in advance the sites where strong contamination is likely. This gives a basis for prioritising surveys and remediation without new field work.</p>
+<p>The pilot question: <strong>where are children most at risk from former pesticide warehouses and burial sites, and what can be estimated for places without laboratory analyses.</strong> The risk logic follows UNICEF's Children's Climate and Environmental Risk Index (CCRI-DRM): risk = hazard × exposure of children × vulnerability (exposure pathways).</p>
+<p>The pilot has four results:</p>
+<ul>
+<li>a consolidated POPs layer: all chemicals.tj map sites, samples and values from attached documents, georeferenced;</li>
+<li>a screening model: the probability of strong site contamination estimated before laboratory analysis;</li>
+<li>a child risk index for every site;</li>
+<li>a demo stand with a map, site cards and assessment of a new site, plus a plan for the next sampling campaign.</li>
+</ul>
+<p>Work on heavy metals (XRF at 10 warehouses) continues in parallel; the sites shared by the two topics are discussed in a separate section.</p>
+<h2>Data</h2>
+<p>The POPs layer is built entirely from open data of the chemicals.tj map: 192 sites of type "POPs", 586 samples, 2823 concentration values in the consolidated sample (duplicates removed). DDT or HCH analyses exist for 169 map sites, laboratory protocols and sampling-log values combined.</p>
+<p><strong>Sources.</strong> For each site the map provides a survey form (about 50 fields: area, odour, access, water, population in 50/100/500 m rings), a text description and attachments. Of 373 attached documents, 245 distinct ones remained after merging copies by text: laboratory protocols, sampling logs and registers, reports.</p>
+<table>
+<thead>
+<tr>
+<th>Source of analyses</th>
+<th>Sampled</th>
+<th>Samples</th>
+<th>Substances</th>
+<th>How obtained</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Agrophysical Research Institute (AFI), protocol No. 126 of 20 September 2019</td>
+<td>2019</td>
+<td>286</td>
+<td>DDT, DDD, DDE, γ-HCH</td>
+<td>scan, transcribed manually and checked against the logs</td>
+</tr>
+<tr>
+<td>Agrophysical Research Institute (AFI), protocol No. 8 of 12 February 2021</td>
+<td>2020</td>
+<td>157</td>
+<td>DDT, DDE, α-, β-, γ-HCH</td>
+<td>text PDF</td>
+</tr>
+<tr>
+<td>ILIM research association (Bishkek), report No. 42 of 1 March 2017, EPA 8081</td>
+<td>2016</td>
+<td>31</td>
+<td>17 organochlorine pesticides</td>
+<td>text PDF</td>
+</tr>
+<tr>
+<td>V.I. Nikitin Institute of Chemistry, table of 27 July 2012</td>
+<td>2012</td>
+<td>16</td>
+<td>10 pesticides</td>
+<td>text PDF</td>
+</tr>
+<tr>
+<td>V.I. Nikitin Institute of Chemistry, letter of 27 October 2017</td>
+<td>2017</td>
+<td>7</td>
+<td>totals of detected substances</td>
+<td>scan, transcribed manually</td>
+</tr>
+<tr>
+<td>Sampling logs and registers (without a laboratory duplicate)</td>
+<td>2014–2020</td>
+<td>89</td>
+<td>DDT, DDD, DDE; some without a substance name</td>
+<td>text PDF</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Extraction and checks.</strong> Tables in text PDFs were parsed automatically; every value was found verbatim in the text of its document, except 32 flagged cases where the figures overlap with text from a neighbouring column. The 2020 registers matched protocol No. 8 for 47 of 48 sites, and the 2019 logs matched protocol No. 126 for 229 of 233 "site × substance" sets. Where they differ, the laboratory protocol goes into the consolidated sample; a log duplicating a protocol stays in the data with a duplicate flag.</p>
+<p><strong>Sample coordinates.</strong> Laboratory protocols contain no coordinates. For 462 samples coordinates were taken from logs and registers of the same site: by matching the DDT value, by the order of replicates T1/T2/K3, or by sample number; the method is recorded for each sample. The median distance from a sample to the site point is about 30 m. The remaining samples were placed at the site point or, if the site is not on the map, left without geometry.</p>
+<p><strong>Code matching.</strong> Protocol No. 126 records 12 sites under field codes tj77xx that do not exist on the map. Nine of them were confidently linked to map cards by village name; 3 remain ambiguous and are kept in the layer as separate sites without coordinates.</p>
+<p><strong>Site contamination indicator</strong> (burden): the maximum over samples of two totals, DDT+DDD+DDE and HCH isomers, mg/kg. "Not detected" counts as 0 in the total. The reference level is the DDT standard of 0.1 mg/kg. Of 169 sampled sites, the standard is exceeded at 162, 100-fold (10 mg/kg) at 106, and 1000-fold (100 mg/kg) at 52. The maximum is 3601 mg/kg (TJ-7485).</p>
+<h2>Screening model</h2>
+<p>The model separates strongly contaminated sites from the rest using information available before analysis: AUC 0.70 under spatial validation (permutation test p = 0.003). It sets the order of surveys but does not replace the laboratory.</p>
+<p><strong>Target.</strong> A site is "strongly contaminated" if at least one sample has DDT+DDD+DDE or total HCH isomers ≥ 100 mg/kg (1000 times the standard). The training sample is 169 sampled sites, 52 of them strongly contaminated.</p>
+<p><strong>Features</strong> (no information from the analyses):</p>
+<ul>
+<li>the chemicals.tj survey form: area, odour, pit, access, soil cover, crops, animals, water, groundwater, population;</li>
+<li>location: region, coordinates;</li>
+<li>contamination of the five nearest sampled sites (from the training part only);</li>
+<li>open data from local rasters: soil pH (SoilGrids), elevation and slope (150 m DEM), population within ~500 m (WorldPop 2020; for the risk index, WorldPop R2025A), flow accumulation, mean annual temperature and precipitation (WorldClim 2.1).</li>
+</ul>
+<p>The algorithm is regularised logistic regression (scikit-learn), with no external services.</p>
+<p><strong>Validation.</strong> Sites are split into 10 clusters by coordinates; each cluster in turn is held out entirely so that neighbours of the tested site do not enter training. 10 repeats with different splits. Significance is assessed with a permutation test: labels are shuffled and the whole run is repeated; none of 304 repeats reached the final performance.</p>
+<table>
+<thead>
+<tr>
+<th>Feature set</th>
+<th>AUC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Open data (pH, terrain, population, flow, climate)</td>
+<td>0.72</td>
+</tr>
+<tr>
+<td>Survey form + location + neighbours + open data (final model)</td>
+<td>0.70</td>
+</tr>
+<tr>
+<td>Survey form</td>
+<td>0.67</td>
+</tr>
+<tr>
+<td>Location + neighbours</td>
+<td>0.63</td>
+</tr>
+<tr>
+<td>Survey form + card text</td>
+<td>0.60</td>
+</tr>
+</tbody>
+</table>
+<p>The final set was chosen before the last recalculation and was not re-selected, so that the choice is not fitted to the result. Features from card text reduced performance (overfitting with 169 sites) and are not used in the model.</p>
+<figure><img src="{{ url_for('static', filename='docs/selection_curve.png') }}" alt="Selection curve: 20 surveys guided by the model find 13 strongly contaminated sites versus 6.2 with random selection"><figcaption>Out-of-sample validation, 169 chemicals.tj sites, target ≥100 mg/kg. With 20 surveys the model finds 13 strongly contaminated sites versus 6.2 for random selection (chart labels in Russian).</figcaption></figure>
+<p>The model splits sites into three classes by rank score. In the "high" class 54% of sampled sites are strongly contaminated, in the "medium" and "low" classes 18–19%: the model reliably identifies the top third but separates the middle and bottom thirds poorly.</p>
+<h2>Child risk index</h2>
+<p>The index shows where contamination is most dangerous for children specifically. It follows the UNICEF CCRI-DRM logic (risk = hazard × exposure × vulnerability) and is computed transparently, without training; all weights are set at the top of the script <code>db/pop_child_risk_index.py</code> and can be changed without reprogramming.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>How it is computed</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hazard H (0–1)</td>
+<td>log10(burden / 0.1) / 4: the 0.1 mg/kg standard → 0, 1000 mg/kg → 1. A site without analyses gets the mean H of sampled sites in the same screening class</td>
+<td>POPs layer, screening model</td>
+</tr>
+<tr>
+<td>Exposure E (0–1)</td>
+<td>0.6 × rank of the number of children within 1 km + 0.25 × rank of the number of people on the site and within 100 m + 0.15 × mention of a school or children in the card</td>
+<td>WorldPop R2025A, under-18 raster (100 m); survey form</td>
+</tr>
+<tr>
+<td>Vulnerability V (0–1)</td>
+<td>0.7 × share of seven exposure pathways present (drinking water, irrigation, livestock, crops, easy access, flood zone or river within 300 m, groundwater shallower than 10 m) + 0.3 × poverty (1 − national percentile of the Relative Wealth Index within 2 km)</td>
+<td>survey form and card text; Meta Relative Wealth Index</td>
+</tr>
+<tr>
+<td>Risk</td>
+<td>(H × E × V)^(1/3); classes: 50% low, 30% medium, 15% high, 5% very high</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>The number of children comes directly from the WorldPop R2025A age raster (children aged 0–17, 2025, 100 m grid); children under 5 are the sum of the 0–1 and 1–4 rasters. The earlier version multiplied WorldPop 2020 total population by a single share of 0.40; the new estimate agrees with it (rank correlation of risk 0.95, eight of the top ten sites unchanged) but gives on average 1.5 times more children per site. The accuracy of WorldPop rasters at jamoat level can only be checked against census data. If the R2025A files are absent, the script falls back to the earlier scheme with UNFPA regional child shares (Sughd 0.38, DRS 0.41, Khatlon 0.43).</p>
+<p><strong>Results for the 192 map sites:</strong></p>
+<ul>
+<li>about 244 thousand children live within 1 km of the sites, about 75 thousand of them under 5; 112 thousand live near sites with contamination 100 or more times the standard (≥10 mg/kg), and 59 thousand (18 thousand under 5) near strongly contaminated sites (≥100 mg/kg);</li>
+<li>at 56 sites water on or near the site is used for drinking, 118 are in a flood zone or within 300 m of a river, and 102 cards mention children or a school;</li>
+<li>classes: very high, 10 sites; high, 29; medium, 57; low, 96. Nine of the ten very-high sites are in Khatlon region;</li>
+<li>3 of the 39 sites in the top classes have no analyses, and their hazard is estimated by the screening model; 5 others are marked on the map as "cleaned up", although the analyses on the site show contamination above the standard.</li>
+</ul>
+<p><strong>Ten sites with the highest risk:</strong></p>
+<table>
+<thead>
+<tr><th>No.</th><th>Code</th><th>Site</th><th>burden, mg/kg</th><th>Children within 1 km</th><th>Of them under 5</th><th>Poverty (RWI, 0–1)</th><th>Exposure pathways (of 7)</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>TJ-7527</td><td>former warehouse, Chuibor village, Kumsangir</td><td>2306</td><td>2519</td><td>788</td><td>0.41</td><td>6</td></tr>
+<tr><td>2</td><td>TJ-7448</td><td>former warehouse, Bolshevik-1 settlement (marked "cleaned up")</td><td>1342</td><td>611</td><td>191</td><td>0.44</td><td>6</td></tr>
+<tr><td>3</td><td>TJ-7522</td><td>former warehouse, Beshkent village (Komsomol)</td><td>819</td><td>1169</td><td>366</td><td>0.26</td><td>7</td></tr>
+<tr><td>4</td><td>TJ-8182</td><td>Selkhozkhimiya agrochemical depot, Ortikov, Konibodom</td><td>103</td><td>1640</td><td>478</td><td>0.52</td><td>5</td></tr>
+<tr><td>5</td><td>TJ-7634</td><td>Tomin sovkhoz warehouse, Sulhobod village</td><td>358</td><td>2359</td><td>737</td><td>0.12</td><td>5</td></tr>
+<tr><td>6</td><td>TJ-7561</td><td>former warehouse, Sangoba (marked "cleaned up")</td><td>2238</td><td>1167</td><td>365</td><td>0.28</td><td>5</td></tr>
+<tr><td>7</td><td>TJ-7528</td><td>former warehouse, Emamadov, Vahdati Milli jamoat</td><td>305</td><td>1421</td><td>444</td><td>0.52</td><td>4</td></tr>
+<tr><td>8</td><td>TJ-7420</td><td>warehouse in Lagmon, Kulob</td><td>53</td><td>2273</td><td>711</td><td>0.23</td><td>7</td></tr>
+<tr><td>9</td><td>TJ-7486</td><td>burial site, Ayni village, Navbahor (marked "cleaned up")</td><td>695</td><td>543</td><td>170</td><td>0.24</td><td>6</td></tr>
+<tr><td>10</td><td>TJ-7443</td><td>former warehouse, Namuna village, G. Gulmurodov jamoat</td><td>12</td><td>3981</td><td>1245</td><td>0.33</td><td>6</td></tr>
+</tbody>
+</table>
+<p>The index answers "where will intervention protect the most children", while the screening model answers "where to look for contamination". A moderately contaminated site next to a large village and a drinking-water source can rank higher than a strongly contaminated remote site.</p>
+<h2>Application</h2>
+<p><strong>The demo stand</strong> runs locally, without internet access (Flask, Leaflet and the terrain basemap are stored with the stand). Sections:</p>
+<ul>
+<li>"POPs map": all sites coloured by risk to children, by contamination or by screening class; sampled sites are solid circles, model-estimated sites are dashed rings; filters by region, status and class; site ranking and list of survey candidates; a site card with samples, exposure pathways and documents;</li>
+<li>"POPs screening": selection curve, survey candidates, model metrics, limitations, downloads;</li>
+<li>a form for assessing a new site: a specialist enters survey-form data and coordinates, and the stand returns the screening class and the child risk index within seconds. This is how the model fits into an inspector's work: a new site gets its priority immediately.</li>
+</ul>
+<p><strong>Plan for the next sampling campaign</strong> (<code>sampling_plan/</code>): 37 sites, about 190 samples, in four groups.</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Sites</th>
+<th>Samples</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Initial assessment</td><td>14</td><td>56</td><td>no DDT/HCH data; selected by the model and the number of children nearby</td></tr>
+<tr><td>Clean-up verification</td><td>9</td><td>36</td><td>sites marked "cleaned up" but analyses show contamination, or no data after clean-up</td></tr>
+<tr><td>Hotspot delineation</td><td>8</td><td>80</td><td>strongly contaminated sites with children nearby: hotspot boundaries for remediation</td></tr>
+<tr><td>Data update</td><td>6</td><td>18</td><td>latest analyses from 2012–2016</td></tr>
+</tbody>
+</table>
+<p>In the first group the model expects about 4 strongly contaminated sites out of 14. About 45 thousand children live near the plan's sites. For each site the plan lists known data problems from the audit so that they can be fixed during the visit.</p>
+<p>The campaign results will test the model forecast on new sites and provide data for retraining it.</p>
+<h2>chemicals.tj data quality</h2>
+<p>The audit (<code>audit/data_quality_audit.csv</code>) found 63 problems: 16 of high importance, 36 medium, 9 low. Each record contains site codes, evidence and the action needed to fix it on the website.</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Problems</th>
+<th>Main issues</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Identification</td><td>19</td><td>code TJ-7580 used by two different cards; codes TJ-7722, TJ-7724, TJ-7729 in protocol No. 126 that are not on the map; near-duplicate sites</td></tr>
+<tr><td>Coordinates</td><td>13</td><td>at three sites samples are more than 2 km from the site point; swapped latitude and longitude headers; low precision</td></tr>
+<tr><td>Analyses</td><td>10</td><td>value discrepancies between log and protocol; columns without a substance name</td></tr>
+<tr><td>Status</td><td>9</td><td>six sites are marked "cleaned up", but their only analyses show contamination above the standard (TJ-4958, TJ-7448, TJ-7486, TJ-7561, TJ-7582, TJ-7597)</td></tr>
+<tr><td>Documents</td><td>7</td><td>logs attached to other sites (TJ-7414, TJ-7606, TJ-7447); scans without a text layer</td></tr>
+<tr><td>Other</td><td>5</td><td>different log templates, empty survey-form fields, service text in descriptions</td></tr>
+</tbody>
+</table>
+<p>Checking extracted values against protocol scans gave 229 matches out of 233. The most important issue for the client is the "cleaned up" statuses: if they are wrong, people near these sites are considered protected although the contamination remains. These sites are included in the campaign plan (group "Clean-up verification").</p>
+<h2>POPs and heavy metals</h2>
+<p>9 of the 10 warehouses where the project carried out XRF surveys of metals coincide with POPs sites on chemicals.tj (within 150 m); only Shahrinav does not. DDT/HCH analyses exist at 6 of the 9 shared sites (<code>metals_link/</code>).</p>
+<p><strong>Site level.</strong> Metals priority and pesticide contamination are weakly related (rank correlation 0.37 over 6 sites, not significant). Vakhsh and Dusti are at the top of both rankings; Jami district ranks high for metals but has almost no pesticides (0.17 mg/kg).</p>
+<p><strong>Point level.</strong> 12 POPs samples have an XRF point within 50 m. The relationship is not statistically confirmed (with lead 0.29; with arsenic, mercury and zinc 0.14–0.21), but at three sites the hotspots coincided:</p>
+<ul>
+<li>J. Balkhi: the most contaminated POPs sample is next to the point of maximum lead at the site;</li>
+<li>Dusti: the two most contaminated POPs samples are next to the point ranked 2nd of 19 for lead;</li>
+<li>Kushoniyon: the most contaminated POPs sample is next to the point of maximum lead.</li>
+</ul>
+<p>This is a reason to test the hypothesis that pesticides and metals concentrate in the same places at warehouses. If confirmed, inexpensive field XRF surveys could indicate where to take costly laboratory samples for pesticides. Testing requires joint sampling (XRF and laboratory at the same points) in the next campaign.</p>
+<h2>Limitations and next steps</h2>
+<p><strong>Limitations of the pilot:</strong></p>
+<ul>
+<li>169 sampled sites are too few for complex models; the model reliably identifies the top third of sites but separates the medium and low classes poorly;</li>
+<li>analyses were extracted from logs and protocols of different years and laboratories; some 2012–2016 data may be outdated;</li>
+<li>site hazard is based on the most contaminated sample; the area and volume of the hotspot are not taken into account;</li>
+<li>the number of children is a WorldPop model estimate, not a census count; schools and kindergartens are counted only from mentions in the cards;</li>
+<li>for 23 sites without analyses the hazard is a forecast, not a measurement.</li>
+</ul>
+<p><strong>Next steps if the project continues:</strong></p>
+<ol>
+<li>Carry out the campaign according to the sampling plan and compare the results with the forecast as an independent test of the model; then retrain it.</li>
+<li>Introduce a single form for entering analyses (a table instead of PDF), consistent site and sample codes, and coordinates for every sample.</li>
+<li>Add schools and kindergartens from OpenStreetMap and drinking-water sources; check the WorldPop child raster against jamoat-level census data.</li>
+<li>Joint XRF + laboratory sampling to test the link between metals and pesticides.</li>
+<li>Extend the model from sites to territory: a map of likely contamination spread around hotspots, taking runoff and floods into account.</li>
+</ol>
+<h2>Deliverables</h2>
+<p>All files are in the stand project, folder <code>source_data/chemicals_tj/pop_layer/</code>; scripts are in <code>db/</code>. Everything can be reproduced from the website export to the risk index.</p>
+<table>
+<thead>
+<tr>
+<th>Result</th>
+<th>Files</th>
+<th>Script</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Map and document export</td><td><code>sites.csv</code>, <code>files.csv</code>, <code>docs/</code></td><td><code>fetch_chemicals_tj.py</code></td></tr>
+<tr><td>Extraction of analyses from PDF</td><td><code>extracted/measurements_long.csv</code></td><td><code>extract_pop_tables.py</code></td></tr>
+<tr><td>POPs layer (sites, samples, measurements, facts from text)</td><td><code>pop_layer.gpkg</code>, CSV, <code>data_dictionary.md</code></td><td><code>build_pop_layer.py</code></td></tr>
+<tr><td>Open-data features</td><td><code>site_covariates_pop.csv</code></td><td><code>pop_site_covariates.py</code></td></tr>
+<tr><td>Screening model</td><td><code>model/</code>: selection curve, forecasts, feature importance, README</td><td><code>pop_screening_model.py</code></td></tr>
+<tr><td>Child risk index</td><td><code>child_risk/child_risk_index.csv</code>, <code>.gpkg</code></td><td><code>pop_child_risk_index.py</code></td></tr>
+<tr><td>Data audit</td><td><code>audit/data_quality_audit.csv</code>, <code>audit_summary.csv</code></td><td><code>pop_data_audit.py</code></td></tr>
+<tr><td>Sampling plan</td><td><code>sampling_plan/sampling_plan.csv</code>, <code>.gpkg</code></td><td><code>pop_sampling_plan.py</code></td></tr>
+<tr><td>POPs–metals link</td><td><code>metals_link/</code></td><td><code>pop_metals_link.py</code></td></tr>
+<tr><td>Demo stand</td><td><code>webapp/pop.py</code>, <code>pop_engine.py</code>, templates <code>pop_map.html</code>, <code>pop_model.html</code>; instructions <code>webapp/POP_STAND.md</code></td><td>—</td></tr>
+<tr><td>Summary table</td><td><code>chemicals_tj_pop_summary.xlsx</code></td><td>—</td></tr>
+</tbody>
+</table>
+<p>All components are open-source software (Python, scikit-learn, GeoPandas, Flask, Leaflet) and work without internet access.</p>

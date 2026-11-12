@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Export — ML TJ demo{% endblock %}
+{% block body %}
+<h1>Export centre</h1>
+<p class="lead">Project data in open formats. Coordinate system: WGS84 (EPSG:4326); CSV files are UTF-8 with BOM (open correctly in Excel).</p>
+
+<h2>Full package</h2>
+<div class="cards">
+  <div class="card">
+    <h3>GeoPackage (.gpkg)</h3>
+    <p>Layers: sites, site_buffers, samples, measurements_wide, site_covariates, risk_zones. Opens in QGIS, ArcGIS Pro and any GDAL-based library.</p>
+    {% if gpkg %}
+      <p class="note">{{ '%.1f'|format(gpkg.size_mb) }} MB · built {{ gpkg.mtime }}{% if gpkg.age_days > 7 %} · older than 7 days: after new measurements rebuild with <code>python db/export_geopackage.py {{ gpkg_name }}</code>{% endif %}</p>
+      <a class="btn" href="{{ request.script_root }}/export/gpkg">Download .gpkg</a>
+    {% else %}
+      <p class="note">File <code>{{ gpkg_name }}</code> not found in the project root. Build it: <code>python db/export_geopackage.py {{ gpkg_name }}</code></p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>All tables in one archive</h3>
+    <p>All CSV files listed below plus a README describing encoding and units.</p>
+    <a class="btn" href="{{ request.script_root }}/export/all_csv.zip">Download .zip</a>
+  </div>
+</div>
+
+<h2>CSV tables</h2>
+<div class="cards">
+  {% for key, title, desc in csv_items %}
+  <div class="card"><h3>{{ title }}</h3><p>{{ desc }}</p><a class="btn" href="{{ request.script_root }}/export/{{ key }}">Download .csv</a></div>
+  {% endfor %}
+</div>
+
+<h2>GeoJSON vector layers</h2>
+<div class="cards">
+  {% for key, title, desc in geo_items %}
+  <div class="card"><h3>{{ title }}</h3><p>{{ desc }}</p><a class="btn" href="{{ request.script_root }}/export/{{ key }}">Download .geojson</a></div>
+  {% endfor %}
+</div>
+
+<div class="info">Exports are generated from the database at request time; the GeoPackage is served as a ready file. Every download is written to the server log (user, IP, export name). The priority rank in the exports is relative among the 10 sampled warehouses and is not an assessment against regulatory limits.</div>
+<p class="note">Column names and data values in the files are kept as stored in the database (site names in Russian).</p>
+{% endblock %}

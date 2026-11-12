@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Журнал моделей — демо ML TJ{% endblock %}
+{% block body %}
+<h1>Журнал версий моделей</h1>
+<p class="lead">Каждый пересчёт добавляет строку в <code>model_versions</code>; старые версии не удаляются. Зелёным выделена версия, отображаемая на карте.</p>
+
+<div class="scroll"><table class="data">
+  <thead><tr>
+    <th class="n">№</th><th>Дата</th><th>Тип</th><th>Вещество</th><th>Целевая переменная</th>
+    <th class="n">Складов</th><th class="n">Точек</th>
+    <th class="n">R² (наивный)</th><th class="n">LOWO R²</th><th class="n">LOWO RMSE</th>
+    <th>Признаки</th><th>Причина пересчёта</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr class="{{ 'prod' if r.is_prod }}">
+    <td class="n">{{ r.model_version_id }}{% if r.is_prod %}<br><span class="badge" style="background:#27ae60">на карте</span>{% endif %}</td>
+    <td>{{ r.trained_at_s }}</td>
+    <td>{{ r.kind }}</td>
+    <td>{{ r.target_substance or '—' }}</td>
+    <td>{{ r.target_variant or '—' }}</td>
+    <td class="n">{{ r.n_sites if r.n_sites is not none else '—' }}</td>
+    <td class="n">{{ r.n_points if r.n_points is not none else '—' }}</td>
+    <td class="n">{{ r.naive_r2|num('{:.3f}') }}</td>
+    <td class="n">{{ r.lowo_r2|num('{:.3f}') }}</td>
+    <td class="n">{{ r.lowo_rmse|num('{:.3f}') }}</td>
+    <td>{{ r.features or '—' }}</td>
+    <td>{{ r.trigger_reason or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="12" class="note">Версий пока нет — запустите <code>python db/run_model_and_store.py</code>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<div class="info"><b>Типы строк.</b> «ML (LOWO)» — обученная модель с проверкой Leave-One-Warehouse-Out. «Описательный расчёт» — прогон без обучения (например, зоны по квартилям индекса): записывается для прослеживаемости, метрик точности у него нет.</div>
+<p class="note">Выгрузка журнала: <a href="{{ request.script_root }}/export/model_versions_csv">CSV</a>. Методика и список проверенных вариантов: <a href="{{ request.script_root }}/about">«Методика»</a>.</p>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Methodology: metals — ML TJ demo{% endblock %}
+{% block body %}
+<h1>Methodology: heavy metals</h1>
+<p class="lead">Predicting the relative level of heavy-metal soil contamination at former agrochemical warehouse sites, Tajikistan.</p>
+
+{% if s %}
+<div class="stats">
+  <div class="stat"><b>{{ s.n_sites }}</b><span>warehouses</span></div>
+  <div class="stat"><b>{{ s.n_points }}</b><span>XRF points</span></div>
+  <div class="stat"><b>{{ s.n_substances }}</b><span>elements</span></div>
+  <div class="stat"><b>{{ s.n_measurements }}</b><span>values</span></div>
+  <div class="stat"><b>{{ s.lowo_r2_pb|num('{:.3f}') }}</b><span>LOWO R², Pb</span></div>
+</div>
+{% endif %}
+
+<h2>1. What is modelled</h2>
+<p>The target variable is log(Pb) minus the median log(Pb) of the site. This normalization removes the "which warehouse is it" effect and keeps the signal of the point's position within the site. The model answers "where within a known warehouse is the concentration higher than typical for that warehouse", not "what is the absolute concentration at an arbitrary point in the country".</p>
+<p>Why Pb. XRF measures elements; pesticides were not measured in these data (they are determined in a laboratory). Pb was chosen as the main element as a typical anthropogenic marker with a wide range of values. The other eight elements were tested with the same scheme (table below). A link between heavy metals and pesticide contamination is not shown in the data and remains a hypothesis; testing it requires laboratory samples for pesticides.</p>
+
+<h2>2. Data</h2>
+<ul>
+  <li>Core data: portable XRF, 10 warehouses, 169 points, 9 elements (Mo, U, Rb, Th, Pb, As, Hg, Zn, Co).</li>
+  <li>Values below the detection limit are not discarded: they are flagged <code>below_lod</code> in the table and replaced with LOD/2 in the model.</li>
+  <li>Open covariates (water, soil, terrain, climate, geology, land use, population) are collected and stored in the database; the list and status are on the <a href="{{ request.script_root }}/sources">"Data sources"</a> page.</li>
+</ul>
+
+<h2>3. Model and validation</h2>
+<table class="data">
+  <tr><th>Parameter</th><th>Value</th></tr>
+  <tr><td>Algorithm</td><td>Random Forest, 300 trees, min_samples_leaf=3</td></tr>
+  <tr><td>Features</td><td>distance to water (per point, OSM) + soil pH (per warehouse, SoilGrids) + geometry of the point position</td></tr>
+  <tr><td>Validation</td><td>Leave-One-Warehouse-Out: training on 9 warehouses, testing on the tenth</td></tr>
+  <tr><td>Result (Pb)</td><td>LOWO R² 0.16–0.17; the value depends on the random seed of the forest (12 runs: 0.157–0.178) and slightly on library versions</td></tr>
+</table>
+<p>Group validation was chosen because random 5-fold CV on the same data inflates R² roughly twofold: neighbouring points of one warehouse end up in both training and test sets.</p>
+
+<h3>Results for all elements</h3>
+<p class="note">Each row is a separate model for one element; both columns are that model's R² at a warehouse left out of training (LOWO). The columns differ only in the features: the baseline set is the point's position relative to the warehouse (signed distance to the outline, distance to the warehouse centre, zone); "water + pH" is the baseline set plus distance to water (OSM) and soil pH (SoilGrids). This is not feature importance (not SHAP or Gini).</p>
+<div class="scroll"><table class="data">
+  <tr><th>Element</th><th class="n">LOWO R², baseline set</th><th class="n">LOWO R², water + pH</th><th>Conclusion</th></tr>
+  <tr><td>Rb</td><td class="n">+0.101</td><td class="n">+0.203</td><td>Signal present; probably natural background (hypothesis), a geochemist is needed</td></tr>
+  <tr><td>Co</td><td class="n">+0.117</td><td class="n">+0.176</td><td>Signal present; same as above</td></tr>
+  <tr><td>Pb</td><td class="n">+0.040</td><td class="n">+0.163</td><td>Weak signal; element of the stand model</td></tr>
+  <tr><td>As</td><td class="n">−0.025</td><td class="n">+0.031</td><td>No transferable signal</td></tr>
+  <tr><td>Hg</td><td class="n">−0.083</td><td class="n">+0.015</td><td>None</td></tr>
+  <tr><td>U</td><td class="n">−0.036</td><td class="n">−0.007</td><td>None</td></tr>
+  <tr><td>Th</td><td class="n">−0.114</td><td class="n">−0.036</td><td>None</td></tr>
+  <tr><td>Zn</td><td class="n">−0.307</td><td class="n">−0.221</td><td>Worse than the warehouse median</td></tr>
+  <tr><td>Mo</td><td class="n">−0.329</td><td class="n">−0.246</td><td>Worse than the warehouse median</td></tr>
+</table></div>
+<p class="note">Computed on 22.10.2026: LOWO, Random Forest (300 trees), mean over 5 random seeds, data from the GPKG export (notebook <code>notebooks/03_all_elements.ipynb</code>). R² ≤ 0 means the model is no better than the warehouse median; no predictions are published for such elements. Values may differ by ±0.01–0.02 from other runs.</p>
+
+<h3>Alternatives tested</h3>
+<div class="scroll"><table class="data">
+  <tr><th>Test</th><th class="n">LOWO R² (Pb), value</th><th>Conclusion</th></tr>
+  <tr><td>Water + pH (current model)</td><td class="n">+0.157 (one seed)</td><td>Used on the stand (highest LOWO R² among the variants)</td></tr>
+  <tr><td>Same features, Gradient Boosting (HistGB)</td><td class="n">+0.080</td><td>Below RF; algorithm unchanged</td></tr>
+  <tr><td>Baseline set (distance/zone), RF</td><td class="n">+0.031</td><td>Lower bound for comparison</td></tr>
+  <tr><td>Adding climate to water+pH</td><td class="n">0.146</td><td>Worse</td></tr>
+  <tr><td>Adding flow accumulation to water+pH</td><td class="n">0.126</td><td>Worse</td></tr>
+  <tr><td>Absolute (country-wide) model, best variant</td><td class="n">≈ +0.07</td><td>Data from 10 warehouses are insufficient</td></tr>
+</table></div>
+<p class="note">Hypothesis: warehouse-level features (pH, elevation, climate) with N=10 partly encode the identity of the warehouse, so their contribution does not add up when combined with the working pair.</p>
+
+<h2>4. What the map shows and how to read the levels</h2>
+<ul>
+  <li><b>Warehouse priority</b> (default layer): the rank of the warehouse among the ten known ones. For each point, the mean over Pb, As, Hg, Zn of log(value) minus log(survey median for that substance) is computed; the warehouse index is the median over its points; warehouses are ranked by the index. Colours: ranks 1–3, 4–5, 6–7, 8–10. This compares warehouses with each other; it is not a health-risk assessment and not a comparison with regulatory limits (<a href="{{ request.script_root }}/priority">details</a>). Rb and Co are excluded pending a geochemist's opinion.</li>
+  <li><b>Raw data</b>: the median Pb of the warehouse, coloured by percentile among the 10 warehouses.</li>
+  <li><b>Pb model: within-warehouse index</b>: the model prediction (deviation from the warehouse's own median) is converted to a percentile among all 169 points and multiplied by 100; the warehouse colour is the median over its points. The index does not compare warehouses: between-warehouse differences are not part of the target. It is computed on training data. The four levels (low, medium, high, critical) are percentile quarters, so each level contains about 25% of points by construction, regardless of the actual concentrations.</li>
+  <li><b>Contamination zones</b>: zones within the site by quarters of the composite index (Pb, As, Hg, Zn) among the points of the same warehouse; built by buffering the measured points, without interpolation; gaps between points are not extrapolated.</li>
+</ul>
+
+<h2>5. Limitations</h2>
+<div class="caveat">
+  <ul style="margin:0;padding-left:18px">
+    <li>The prediction is relative within a known site; it has not been validated for unsurveyed sites.</li>
+    <li>LOWO R² is modest (0.16–0.17): the model is a supporting factor, not a basis for decisions.</li>
+    <li>The low…critical levels are percentile quarters: they show the position within the sample, not a concentration or a threshold exceedance.</li>
+    <li>The model is built on heavy metals; XRF does not measure pesticides. Using Pb as an indicator of pesticide contamination is a hypothesis requiring laboratory verification samples.</li>
+    <li>The priority rank compares the 10 warehouses with each other. An absolute comparison is done separately, against international guideline values (<a href="{{ request.script_root }}/norms">"Standards"</a>); national limits for metals and pesticides have not been confirmed by the client and are plugged in through the reference table without changing the model.</li>
+    <li>XRF is less accurate for Hg than for Pb.</li>
+    <li>Rb and Co are excluded from prioritization: a geochemist's opinion is needed (natural background or contamination).</li>
+    <li>Warehouse-level features may reflect site identity rather than a transferable pattern; this risk decreases as the number of warehouses grows.</li>
+  </ul>
+</div>
+
+<h2>6. How the model is updated</h2>
+<ol>
+  <li>New measurements or warehouses are loaded into the database (<code>db/import_data.py</code>).</li>
+  <li>Covariates, priority (<code>db/rank_sites_priority.py</code>), zones (<code>db/build_risk_zones.py</code>) and the model (<code>db/run_model_and_store.py</code>) are recomputed.</li>
+  <li>Every run is recorded in the version log; old versions are not deleted (<a href="{{ request.script_root }}/models">log</a>).</li>
+</ol>
+<p class="note">Advanced methods (kriging, Gaussian processes) require considerably more points per site; their use depends on the volume of new data (on the order of 150–200 points under the ToR).</p>
+{% endblock %}

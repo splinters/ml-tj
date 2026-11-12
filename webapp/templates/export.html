@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Экспорт — демо ML TJ{% endblock %}
+{% block body %}
+<h1>Центр экспорта</h1>
+<p class="lead">Данные проекта в открытых форматах. Системы координат — WGS84 (EPSG:4326), CSV — UTF-8 с BOM (корректно открывается в Excel).</p>
+
+<h2>Полный пакет</h2>
+<div class="cards">
+  <div class="card">
+    <h3>GeoPackage (.gpkg)</h3>
+    <p>Слои: sites, site_buffers, samples, measurements_wide, site_covariates, risk_zones. Открывается в QGIS, ArcGIS Pro и любой библиотекой GDAL.</p>
+    {% if gpkg %}
+      <p class="note">{{ '%.1f'|format(gpkg.size_mb) }} МБ · собран {{ gpkg.mtime }}{% if gpkg.age_days > 7 %} · старше 7 дней: после новых замеров пересоберите <code>python db/export_geopackage.py {{ gpkg_name }}</code>{% endif %}</p>
+      <a class="btn" href="{{ request.script_root }}/export/gpkg">Скачать .gpkg</a>
+    {% else %}
+      <p class="note">Файл <code>{{ gpkg_name }}</code> не найден в корне проекта. Соберите: <code>python db/export_geopackage.py {{ gpkg_name }}</code></p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Все таблицы одним архивом</h3>
+    <p>Все CSV из списка ниже и README с описанием кодировки и единиц.</p>
+    <a class="btn" href="{{ request.script_root }}/export/all_csv.zip">Скачать .zip</a>
+  </div>
+</div>
+
+<h2>Таблицы CSV</h2>
+<div class="cards">
+  {% for key, title, desc in csv_items %}
+  <div class="card"><h3>{{ title }}</h3><p>{{ desc }}</p><a class="btn" href="{{ request.script_root }}/export/{{ key }}">Скачать .csv</a></div>
+  {% endfor %}
+</div>
+
+<h2>Векторные слои GeoJSON</h2>
+<div class="cards">
+  {% for key, title, desc in geo_items %}
+  <div class="card"><h3>{{ title }}</h3><p>{{ desc }}</p><a class="btn" href="{{ request.script_root }}/export/{{ key }}">Скачать .geojson</a></div>
+  {% endfor %}
+</div>
+
+<div class="info">Выгрузки формируются из БД в момент запроса, GeoPackage отдаётся готовым файлом. Каждое скачивание записывается в журнал сервера (пользователь, IP, имя выгрузки). Ранг приоритета в выгрузках относителен между 10 складами выборки и не является оценкой против нормативов ПДК.</div>
+{% endblock %}

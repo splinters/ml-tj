@@ -1,0 +1,83 @@
+{% set ep = request.endpoint or '' %}
+{% set R = request.script_root %}
+{% set groups = [
+  (T('Металлы', 'Metals'), [
+    (T('Карта', 'Map'), R ~ '/', ep == 'index'),
+    (T('Таблицы', 'Tables'), R ~ '/table', ep == 'table_view'),
+    (T('Приоритизация', 'Prioritization'), R ~ '/priority', ep == 'pages.priority'),
+    (T('Нормативы', 'Standards'), R ~ '/norms', ep == 'pages.norms'),
+    (T('Контекст складов', 'Site context'), R ~ '/context', ep == 'pages.context_page'),
+    (T('Модели', 'Models'), R ~ '/models', ep == 'pages.models'),
+  ]),
+  (T('СОЗ', 'POPs'), [
+    (T('Карта', 'Map'), R ~ '/pop', ep == 'pop.pop_map'),
+    (T('Скрининг участков', 'Site screening'), R ~ '/pop/model', ep == 'pop.pop_model'),
+  ]),
+  (T('Климат', 'Climate'), R ~ '/climate', ep.startswith('climate.')),
+  (T('Документы', 'Documents'), [
+    (T('Методика: металлы', 'Methodology: metals'), R ~ '/about', ep == 'pages.about'),
+    (T('Методика: СОЗ', 'Methodology: POPs'), R ~ '/docs/pop-methodology', ep == 'docs.pop_methodology'),
+    (T('Очистка и подготовка данных', 'Data cleaning and preparation'), R ~ '/docs/data-preparation', ep == 'docs.data_preparation'),
+    (T('Блокноты с расчётами', 'Computational notebooks'), R ~ '/notebooks', ep.startswith('notebooks.')),
+    (T('Презентация (PDF)', 'Presentation (PDF)'), R ~ T('/docs/presentation.pdf', '/docs/presentation-en.pdf'), false),
+    (T('Источники данных', 'Data sources'), R ~ '/sources', ep == 'pages.sources'),
+    (T('Все документы', 'All documents'), R ~ '/docs', ep == 'docs.docs_index'),
+  ]),
+  (T('Экспорт', 'Export'), R ~ '/export', ep.startswith('pages.export')),
+] %}
+<style>
+/* верхнее меню с выпадающими группами: без JS и внешних файлов */
+.topnav { display:flex; flex-wrap:wrap; align-items:stretch; gap:2px; background:#2c3e50; padding:0 12px; position:sticky; top:0; z-index:2000; flex:none;
+  font-family:-apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.topnav > a, .topnav .nav-top { color:#dfe6ec; text-decoration:none; padding:11px 14px; font-size:14px; line-height:1.5; background:none; border:0;
+  font-family:inherit; cursor:pointer; display:block; white-space:nowrap; }
+.topnav > a:hover, .topnav .nav-dd:hover > .nav-top, .topnav .nav-dd:focus-within > .nav-top { background:rgba(255,255,255,.12); }
+.topnav > a.active, .topnav .nav-dd.active > .nav-top { background:#fff; color:#2c3e50; font-weight:600; }
+.topnav .nav-top .sub { font-weight:400; opacity:.75; }
+.topnav .nav-top .caret { font-size:10px; margin-left:5px; opacity:.8; }
+.topnav .nav-dd { position:relative; }
+.topnav .nav-menu { display:none; position:absolute; left:0; top:100%; min-width:230px; background:#fff; border:1px solid #d5dbe1;
+  border-radius:0 0 6px 6px; box-shadow:0 6px 18px rgba(0,0,0,.18); padding:4px 0; z-index:2001; }
+.topnav .nav-dd:hover > .nav-menu, .topnav .nav-dd:focus-within > .nav-menu, .topnav .nav-dd.open > .nav-menu { display:block; }
+.topnav .nav-menu a { display:block; color:#2c3e50; text-decoration:none; padding:8px 16px; font-size:14px; line-height:1.4; white-space:nowrap; }
+.topnav .nav-menu a:hover { background:#eef2f6; }
+.topnav .lang-sw { margin-left:auto; display:flex; align-items:center; gap:2px; padding:0 4px; }
+.topnav .lang-sw a { color:#dfe6ec; text-decoration:none; font-size:12.5px; font-weight:600; padding:4px 8px; border:1px solid rgba(255,255,255,.35); border-radius:4px; line-height:1.3; }
+.topnav .lang-sw a.on { background:#fff; color:#2c3e50; border-color:#fff; }
+.topnav .nav-menu a.active { font-weight:600; background:#e6edf5; border-left:3px solid #2c3e50; padding-left:13px; }
+</style>
+<nav class="topnav">
+{% for g in groups %}
+  {% if g[1] is string %}
+  <a href="{{ g[1] }}" class="{{ 'active' if g[2] }}">{{ g[0] }}</a>
+  {% else %}
+  {% set ns = namespace(act='') %}
+  {% for it in g[1] %}{% if it[2] and not ns.act %}{% set ns.act = it[0] %}{% endif %}{% endfor %}
+  <div class="nav-dd {{ 'active' if ns.act }}">
+    <button type="button" class="nav-top" aria-haspopup="true">{{ g[0] }}{% if ns.act %}<span class="sub">: {{ ns.act }}</span>{% endif %}<span class="caret">▼</span></button>
+    <div class="nav-menu">
+      {% for it in g[1] %}<a href="{{ it[1] }}" class="{{ 'active' if it[2] }}">{{ it[0] }}</a>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% endfor %}
+  <div class="lang-sw" title="{{ T('Язык интерфейса', 'Interface language') }}"><a href="{{ lang_url('ru') }}" class="{{ 'on' if lang == 'ru' }}">RU</a><a href="{{ lang_url('en') }}" class="{{ 'on' if lang == 'en' }}">EN</a></div>
+</nav>
+<script>window.LANG = {{ lang|tojson }}; window.TL = function (ru, en) { return window.LANG === 'en' ? en : ru; };
+document.documentElement.lang = window.LANG;</script>
+<script>
+/* открытие групп по нажатию (сенсорные экраны, Safari); закрытие - по нажатию вне меню или Esc */
+(function () {
+  var dds = document.querySelectorAll('.topnav .nav-dd');
+  dds.forEach(function (dd) {
+    dd.querySelector('.nav-top').addEventListener('click', function (e) {
+      e.stopPropagation();
+      var was = dd.classList.contains('open');
+      dds.forEach(function (o) { o.classList.remove('open'); });
+      if (!was) dd.classList.add('open');
+    });
+  });
+  document.addEventListener('click', function () { dds.forEach(function (o) { o.classList.remove('open'); }); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') dds.forEach(function (o) { o.classList.remove('open'); }); });
+})();
+</script>

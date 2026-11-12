@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Data sources — ML TJ demo{% endblock %}
+{% block body %}
+<h1>Data sources</h1>
+<p class="lead">Origin of each layer, its level (point, warehouse or POPs site) and its status in the model or in the child risk index.</p>
+
+<div class="scroll"><table class="data">
+  <thead><tr><th>Data</th><th>Source</th><th>Level</th><th>Status</th><th>Where in the DB</th><th>Note</th><th>Licence</th></tr></thead>
+  <tbody>
+  {% for s in sources %}
+  {% set st = status_labels[s.status] %}
+  <tr>
+    <td>{{ s.name }}</td>
+    <td>{{ s.provider }}</td>
+    <td>{{ s.level }}</td>
+    <td><span class="badge" style="background: {{ st[1] }}">{{ st[0] }}</span></td>
+    <td><code>{{ s.where }}</code></td>
+    <td>{{ s.note }}</td>
+    <td>{{ s.license }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="note">Licences follow the publishers' terms; check them against the original source before publishing data externally.</p>
+
+<h2>External services used by the map</h2>
+<p>All stand pages except the metals map work without internet access. When opened, the map (<code>/</code>) loads basemaps and layers from the browser:</p>
+<table class="data">
+  <thead><tr><th>Layer</th><th>Service</th></tr></thead>
+  <tbody>
+  {% for name, host in external %}<tr><td>{{ name }}</td><td>{{ host }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+<div class="info">For an isolated network these layers are replaced with local ones: rasters are published through GeoServer (WMS), vector basemaps come from a local tile server. This replacement belongs to the next stage (raster publishing).</div>
+{% endblock %}

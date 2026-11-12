@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Model log — ML TJ demo{% endblock %}
+{% block body %}
+<h1>Model version log</h1>
+<p class="lead">Every run adds a row to <code>model_versions</code>; old versions are never deleted. The version shown on the map is highlighted in green.</p>
+
+<div class="scroll"><table class="data">
+  <thead><tr>
+    <th class="n">No.</th><th>Date</th><th>Type</th><th>Substance</th><th>Target variable</th>
+    <th class="n">Warehouses</th><th class="n">Points</th>
+    <th class="n">R² (naive)</th><th class="n">LOWO R²</th><th class="n">LOWO RMSE</th>
+    <th>Features</th><th>Reason for the run</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr class="{{ 'prod' if r.is_prod }}">
+    <td class="n">{{ r.model_version_id }}{% if r.is_prod %}<br><span class="badge" style="background:#27ae60">on the map</span>{% endif %}</td>
+    <td>{{ r.trained_at_s }}</td>
+    <td>{{ r.kind }}</td>
+    <td>{{ r.target_substance or '—' }}</td>
+    <td>{{ r.target_variant or '—' }}</td>
+    <td class="n">{{ r.n_sites if r.n_sites is not none else '—' }}</td>
+    <td class="n">{{ r.n_points if r.n_points is not none else '—' }}</td>
+    <td class="n">{{ r.naive_r2|num('{:.3f}') }}</td>
+    <td class="n">{{ r.lowo_r2|num('{:.3f}') }}</td>
+    <td class="n">{{ r.lowo_rmse|num('{:.3f}') }}</td>
+    <td>{{ r.features or '—' }}</td>
+    <td>{{ r.trigger_reason or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="12" class="note">No versions yet — run <code>python db/run_model_and_store.py</code>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<div class="info"><b>Row types.</b> "ML (LOWO)" is a trained model validated with Leave-One-Warehouse-Out. "Descriptive calculation" is a run without training (for example, zones by index quartiles): it is logged for traceability and has no accuracy metrics.</div>
+<p class="note">Download the log: <a href="{{ request.script_root }}/export/model_versions_csv">CSV</a>. Methodology and the list of tested variants: <a href="{{ request.script_root }}/about">"Methodology: metals"</a>.</p>
+{% endblock %}

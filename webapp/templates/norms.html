@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Нормативы — демо ML TJ{% endblock %}
+{% block head %}
+<style>
+  .ok { color:#1e8449; } .bad { color:#c0392b; font-weight:600; } .mute { color:#888; }
+  .cell { white-space: nowrap; }
+  code.cmd { display:block; background:#f4f4f4; padding:8px 12px; border-radius:4px; font-size:12.5px; overflow-x:auto; margin:6px 0; }
+</style>
+{% endblock %}
+{% macro vbadge(v) -%}
+  {% if v == 'primary' %}<span class="badge" style="background:#27ae60">сверено</span>
+  {% elif v == 'customer_doc' %}<span class="badge" style="background:#2980b9">из документа заказчика</span>
+  {% elif v == 'secondary' %}<span class="badge" style="background:#e67e22">нужна сверка</span>
+  {% else %}<span class="badge" style="background:#7f8c8d">не сверено</span>{% endif %}
+{%- endmacro %}
+{% block body %}
+<h1>Нормативы качества почвы</h1>
+<p class="lead">Справочник «вещество — норматив — единица — тип землепользования — источник» и сравнение замеров с ним.</p>
+
+{% if missing %}
+<div class="caveat">Справочник нормативов ещё не создан в БД. Выполните <code>python db/load_norms.py</code> и обновите страницу.</div>
+{% else %}
+
+<div class="info">
+  <b>Как читать.</b> Национальных ПДК для металлов и пестицидов, подтверждённых заказчиком, пока нет; в расчёте используются международные ориентиры (профиль ниже). Ориентиры US EPA RSL и CCME — скрининговые уровни и руководящие значения для оценки риска, а не нормативы очистки. Сравнение относится к <b>валовому содержанию</b> (XRF); нормативы по подвижным формам в расчёт не входят. Значения ниже предела обнаружения (LOD) в превышения не засчитываются.
+</div>
+
+<h2>Активный профиль</h2>
+{% if prof %}
+<table class="data">
+  <tr><th>Профиль</th><td><b>{{ prof.profile_id }}</b> — землепользование: {{ prof.land_use }}</td></tr>
+  <tr><th>Описание</th><td>{{ prof.description }}</td></tr>
+  <tr><th>Землепользование по складам</th><td>Для складов, у которых заказчик подтвердил целевое землепользование после рекультивации, применяется оно; для остальных — тип профиля. См. <a href="{{ request.script_root }}/context">Контекст</a>.</td></tr>
+  <tr><th>Порядок источников</th><td>
+    {% for s in profile_sources %}{{ s.priority }}. <b>{{ s.source_id }}</b> <span class="note">{{ s.title }}{% if s.version_date %}, {{ s.version_date }}{% endif %}</span><br>{% endfor %}
+    <span class="note">Для каждого вещества применяется первый по порядку источник, где оно есть.</span>
+  </td></tr>
+</table>
+{% else %}
+<div class="caveat">Активный профиль не выбран: <code>python db/load_norms.py --profile intl_default</code></div>
+{% endif %}
+
+<h2>Замеры против норматива</h2>
+<div class="scroll"><table class="data">
+  <thead><tr><th>Вещество</th><th class="n">Норматив, мг/кг</th><th>Источник</th><th>Статус</th>
+    <th class="n">Значений</th><th class="n">Превышений</th><th class="n">Ниже LOD*</th><th class="n">Макс. кратность</th></tr></thead>
+  <tbody>
+  {% for r in summary %}
+  <tr>
+    <td>{{ r.substance }}{% if r.applies_to %}<br><span class="note">сумма: {{ r.applies_to|join(' + ') }}</span>{% endif %}</td>
+    <td class="n">{{ r.value|num('{:g}') }}</td>
+    <td>{{ r.source_id }}<br><span class="note">{{ r.norm_type }}</span></td>
+    <td>{{ vbadge(r.verification) }}</td>
+    <td class="n">{{ r.n if r.n else '—' }}</td>
+    <td class="n {{ 'bad' if r.n_exceeds else 'ok' if r.n else 'mute' }}">{{ r.n_exceeds if r.n else '—' }}{% if r.n %} <span class="note">({{ '%.0f'|format(r.n_exceeds / r.n * 100) }}%)</span>{% endif %}</td>
+    <td class="n">{{ r.n_censored if r.n else '—' }}</td>
+    <td class="n">{% if r.max_ratio is not none and r.max_ratio == r.max_ratio %}×{{ '%.1f'|format(r.max_ratio) }}{% else %}—{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="note">В активном профиле нет нормативов. Проверьте <code>db/norms_seed.csv</code>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="note">*Ниже LOD — значения ниже предела обнаружения XRF, в том числе случаи, когда сам предел выше норматива (по такому замеру судить о превышении нельзя). Кратность — замер ÷ норматив. Число замеров на складе небольшое, доли превышений описывают выборку, а не всю площадку.</p>
+
+{% if matrix_rows %}
+<h2>По складам</h2>
+<p class="note">Ячейка: точек выше норматива / всего точек (макс. кратность).</p>
+<div class="scroll"><table class="data">
+  <thead><tr><th>Склад</th>{% for s in matrix_subs %}<th class="n">{{ s }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for r in matrix_rows %}
+  <tr><td>{{ r.name }}</td>
+    {% for s in matrix_subs %}
+      {% set c = r.cells.get(s) %}
+      <td class="n cell">{% if c %}<span class="{{ 'bad' if c.exc else 'ok' }}">{{ c.exc }}/{{ c.n }}</span>{% if c.max is not none %} <span class="note">(×{{ '%.1f'|format(c.max) }})</span>{% endif %}{% else %}<span class="mute">—</span>{% endif %}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+{% if gaps %}
+<h2>Вещества без норматива</h2>
+<p>Для этих веществ в активном профиле нормативов нет; они остаются в данных и в модели, но в сравнение не входят.</p>
+<table class="data">
+  <thead><tr><th>Вещество</th><th class="n">Значений</th><th class="n">Ниже LOD</th></tr></thead>
+  <tbody>{% for g in gaps %}<tr><td>{{ g.substance }}</td><td class="n">{{ g.n_values }}</td><td class="n">{{ g.n_below_lod }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+
+<h2>Справочник: все значения по источникам</h2>
+<p class="note">{{ n_norms }} записей. «Подвижная форма» и нормативы с другой формой в расчёт не входят (XRF измеряет валовое содержание). Для ОДК с группами почв в расчёте берётся наименьшее значение: группа почвы склада в БД не хранится.</p>
+<div class="scroll"><table class="data">
+  <thead><tr><th>Вещество</th><th class="n">Значение, мг/кг</th><th>Источник</th><th>Форма</th><th>Землепользование</th><th>Группа почв</th><th>Тип</th><th>Статус</th><th>Примечание</th></tr></thead>
+  <tbody>
+  {% for sub, rows in ref_groups.items() %}
+    {% for r in rows %}
+    <tr>
+      <td>{% if loop.first %}<b>{{ sub }}</b>{% endif %}</td>
+      <td class="n">{{ r.value|num('{:g}') }}</td>
+      <td>{{ r.source_id }}<br><span class="note">{{ 'национальный' if r.tier == 'national' else 'международный' }}{% if r.version_date %}, {{ r.version_date }}{% endif %}</span></td>
+      <td>{{ 'валовое' if r.basis == 'total' else 'подвижная форма' if r.basis == 'mobile' else r.basis }}{% if r.basis != 'total' %}<br><span class="note">с XRF не сопоставим</span>{% endif %}</td>
+      <td>{{ r.land_use }}</td>
+      <td>{{ r.soil_class }}</td>
+      <td>{{ r.norm_type }}</td>
+      <td>{{ vbadge(r.verification) }}</td>
+      <td class="note">{{ r.note or '' }}</td>
+    </tr>
+    {% endfor %}
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<h2>Как добавить норматив</h2>
+<ol>
+  <li>Документ — строка в <code>db/norm_sources_seed.csv</code> (код, название, орган, национальный или международный, реквизиты, ссылка).</li>
+  <li>Значения — строки в <code>db/norms_seed.csv</code> (вещество, мг/кг, форма, землепользование, тип нормы, статус сверки).</li>
+  <li>Включение в расчёт — код источника в <code>source_order</code> нужного профиля в <code>db/norm_profiles.csv</code> (первый в списке приоритетнее).</li>
+  <li>Применение:</li>
+</ol>
+<code class="cmd">python db/load_norms.py --profile &lt;profile_id&gt;</code>
+<p class="note">Скрипт проверяет файлы до записи (единицы, коды, ссылки на источники, дубликаты). Код модели и сайта менять не нужно. Таблицы: <a href="{{ request.script_root }}/export/norms_csv">справочник</a>, <a href="{{ request.script_root }}/export/exceedances_csv">сравнение замеров</a>.</p>
+{% endif %}
+{% endblock %}

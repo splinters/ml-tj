@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Soil standards — ML TJ demo{% endblock %}
+{% block head %}
+<style>
+  .ok { color:#1e8449; } .bad { color:#c0392b; font-weight:600; } .mute { color:#888; }
+  .cell { white-space: nowrap; }
+  code.cmd { display:block; background:#f4f4f4; padding:8px 12px; border-radius:4px; font-size:12.5px; overflow-x:auto; margin:6px 0; }
+</style>
+{% endblock %}
+{% macro vbadge(v) -%}
+  {% if v == 'primary' %}<span class="badge" style="background:#27ae60">verified</span>
+  {% elif v == 'customer_doc' %}<span class="badge" style="background:#2980b9">from client document</span>
+  {% elif v == 'secondary' %}<span class="badge" style="background:#e67e22">needs checking</span>
+  {% else %}<span class="badge" style="background:#7f8c8d">not verified</span>{% endif %}
+{%- endmacro %}
+{% block body %}
+<h1>Soil quality standards</h1>
+<p class="lead">Reference table "substance — standard — unit — land use — source" and comparison of the measurements with it.</p>
+
+{% if missing %}
+<div class="caveat">The standards reference has not been created in the database yet. Run <code>python db/load_norms.py</code> and reload the page.</div>
+{% else %}
+
+<div class="info">
+  <b>How to read.</b> National limits for metals and pesticides confirmed by the client are not yet available; the calculation uses international guideline values (profile below). US EPA RSL and CCME values are screening levels and guideline values for risk assessment, not clean-up standards. The comparison refers to <b>total content</b> (XRF); standards for mobile forms are not used. Values below the detection limit (LOD) are not counted as exceedances.
+</div>
+
+<h2>Active profile</h2>
+{% if prof %}
+<table class="data">
+  <tr><th>Profile</th><td><b>{{ prof.profile_id }}</b> — land use: {{ prof.land_use }}</td></tr>
+  <tr><th>Description</th><td>{{ prof.description }}</td></tr>
+  <tr><th>Land use per warehouse</th><td>For warehouses whose post-remediation land use has been confirmed by the client, that land use applies; for the others, the profile type. See <a href="{{ request.script_root }}/context">Site context</a>.</td></tr>
+  <tr><th>Source order</th><td>
+    {% for s in profile_sources %}{{ s.priority }}. <b>{{ s.source_id }}</b> <span class="note">{{ s.title|vl }}{% if s.version_date %}, {{ s.version_date }}{% endif %}</span><br>{% endfor %}
+    <span class="note">For each substance the first source in this order that covers it is used.</span>
+  </td></tr>
+</table>
+{% else %}
+<div class="caveat">No active profile selected: <code>python db/load_norms.py --profile intl_default</code></div>
+{% endif %}
+
+<h2>Measurements against the standard</h2>
+<div class="scroll"><table class="data">
+  <thead><tr><th>Substance</th><th class="n">Standard, mg/kg</th><th>Source</th><th>Status</th>
+    <th class="n">Values</th><th class="n">Exceedances</th><th class="n">Below LOD*</th><th class="n">Max. ratio</th></tr></thead>
+  <tbody>
+  {% for r in summary %}
+  <tr>
+    <td>{{ r.substance }}{% if r.applies_to %}<br><span class="note">sum: {{ r.applies_to|join(' + ') }}</span>{% endif %}</td>
+    <td class="n">{{ r.value|num('{:g}') }}</td>
+    <td>{{ r.source_id }}<br><span class="note">{{ r.norm_type }}</span></td>
+    <td>{{ vbadge(r.verification) }}</td>
+    <td class="n">{{ r.n if r.n else '—' }}</td>
+    <td class="n {{ 'bad' if r.n_exceeds else 'ok' if r.n else 'mute' }}">{{ r.n_exceeds if r.n else '—' }}{% if r.n %} <span class="note">({{ '%.0f'|format(r.n_exceeds / r.n * 100) }}%)</span>{% endif %}</td>
+    <td class="n">{{ r.n_censored if r.n else '—' }}</td>
+    <td class="n">{% if r.max_ratio is not none and r.max_ratio == r.max_ratio %}×{{ '%.1f'|format(r.max_ratio) }}{% else %}—{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="note">The active profile has no standards. Check <code>db/norms_seed.csv</code>.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="note">*Below LOD: XRF values below the detection limit, including cases where the limit itself exceeds the standard (such a measurement cannot show an exceedance). Ratio = measurement ÷ standard. The number of measurements per warehouse is small; exceedance shares describe the sample, not the whole site.</p>
+
+{% if matrix_rows %}
+<h2>By warehouse</h2>
+<p class="note">Cell: points above the standard / all points (max. ratio).</p>
+<div class="scroll"><table class="data">
+  <thead><tr><th>Warehouse</th>{% for s in matrix_subs %}<th class="n">{{ s }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for r in matrix_rows %}
+  <tr><td>{{ r.name }}</td>
+    {% for s in matrix_subs %}
+      {% set c = r.cells.get(s) %}
+      <td class="n cell">{% if c %}<span class="{{ 'bad' if c.exc else 'ok' }}">{{ c.exc }}/{{ c.n }}</span>{% if c.max is not none %} <span class="note">(×{{ '%.1f'|format(c.max) }})</span>{% endif %}{% else %}<span class="mute">—</span>{% endif %}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+{% if gaps %}
+<h2>Substances without a standard</h2>
+<p>The active profile has no standards for these substances; they remain in the data and in the model but are not compared.</p>
+<table class="data">
+  <thead><tr><th>Substance</th><th class="n">Values</th><th class="n">Below LOD</th></tr></thead>
+  <tbody>{% for g in gaps %}<tr><td>{{ g.substance }}</td><td class="n">{{ g.n_values }}</td><td class="n">{{ g.n_below_lod }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+
+<h2>Reference: all values by source</h2>
+<p class="note">{{ n_norms }} records. Mobile-form standards and standards for other forms are not used (XRF measures total content). For APC values with soil groups the lowest value is used: the soil group of a warehouse is not stored in the database.</p>
+<div class="scroll"><table class="data">
+  <thead><tr><th>Substance</th><th class="n">Value, mg/kg</th><th>Source</th><th>Form</th><th>Land use</th><th>Soil group</th><th>Type</th><th>Status</th><th>Note</th></tr></thead>
+  <tbody>
+  {% for sub, rows in ref_groups.items() %}
+    {% for r in rows %}
+    <tr>
+      <td>{% if loop.first %}<b>{{ sub }}</b>{% endif %}</td>
+      <td class="n">{{ r.value|num('{:g}') }}</td>
+      <td>{{ r.source_id }}<br><span class="note">{{ 'national' if r.tier == 'national' else 'international' }}{% if r.version_date %}, {{ r.version_date }}{% endif %}</span></td>
+      <td>{{ 'total' if r.basis == 'total' else 'mobile form' if r.basis == 'mobile' else r.basis }}{% if r.basis != 'total' %}<br><span class="note">not comparable with XRF</span>{% endif %}</td>
+      <td>{{ r.land_use }}</td>
+      <td>{{ r.soil_class }}</td>
+      <td>{{ r.norm_type }}</td>
+      <td>{{ vbadge(r.verification) }}</td>
+      <td class="note">{{ r.note|vl if r.note else '' }}</td>
+    </tr>
+    {% endfor %}
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="note">MPC — maximum permissible concentration; APC — approximate permissible concentration (Soviet/CIS soil standards).</p>
+
+<h2>How to add a standard</h2>
+<ol>
+  <li>Document: a row in <code>db/norm_sources_seed.csv</code> (code, title, issuer, national or international, reference, link).</li>
+  <li>Values: rows in <code>db/norms_seed.csv</code> (substance, mg/kg, form, land use, standard type, verification status).</li>
+  <li>Use in the calculation: the source code in <code>source_order</code> of the profile in <code>db/norm_profiles.csv</code> (earlier in the list has priority).</li>
+  <li>Apply:</li>
+</ol>
+<code class="cmd">python db/load_norms.py --profile &lt;profile_id&gt;</code>
+<p class="note">The script validates the files before writing (units, codes, source references, duplicates). No changes to the model or site code are needed. Tables: <a href="{{ request.script_root }}/export/norms_csv">reference</a>, <a href="{{ request.script_root }}/export/exceedances_csv">measurements vs. standards</a>.</p>
+{% endif %}
+{% endblock %}

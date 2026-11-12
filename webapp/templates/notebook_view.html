@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ item.title }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
+<style>
+html, body { height:100%; margin:0; }
+body { display:flex; flex-direction:column; background:#fbfaf7; }
+.nb-bar { display:flex; align-items:center; gap:14px; padding:8px 16px; background:#f1eee6; border-bottom:1px solid #dcd8ce;
+  font: 14px -apple-system, "Segoe UI", Roboto, Arial, sans-serif; flex:none; }
+.nb-bar a { color:#1f6fb2; text-decoration:none; }
+.nb-bar b { color:#16253d; }
+iframe { flex:1; border:0; width:100%; background:#fbfaf7; }
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="nb-bar">
+  <a href="{{ request.script_root }}/notebooks">← {{ T('Все блокноты','All notebooks') }}</a>
+  <b>{{ item.title }}</b>
+  <span style="flex:1"></span>
+  <a href="{{ request.script_root }}/notebooks/raw/{{ item.html_stem }}.html" target="_blank">{{ T('Открыть отдельно','Open separately') }}</a>
+  <a href="{{ request.script_root }}/notebooks/ipynb/{{ item.ipynb_stem }}.ipynb">{{ T('Скачать .ipynb','Download .ipynb') }}</a>
+</div>
+<iframe src="{{ request.script_root }}/notebooks/raw/{{ item.html_stem }}.html" title="{{ item.title }}"></iframe>
+</body>
+</html>

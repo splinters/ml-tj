@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ T('Демо ML TJ', 'ML TJ demo') }}{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body class="page">
+{% include "_nav.html" %}
+<main class="wrap">
+{% block body %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

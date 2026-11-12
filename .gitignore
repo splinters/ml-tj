@@ -1,0 +1,36 @@
+# secrets and local environment
+.env
+.venv*/
+.idea/
+.DS_Store
+__pycache__/
+.ipynb_checkpoints/
+
+# data: national and client data are never committed (see data/README.md)
+/source_data/
+data/*
+!data/README.md
+!data/README.ru.md
+!data/synthetic/
+*.gpkg
+!data/synthetic/*.gpkg
+*.tar
+*.dump
+*.tif
+*.tiff
+*.asc
+
+# generated outputs and caches
+out/
+addfiles/
+notebooks_html/
+notebooks/data/
+geoserver_rasters/
+db/*_cache/
+db/covariates_cache.json
+webapp/buildings/
+webapp/static/*.png
+webapp/static/hydrology*.geojson*
+publish.log
+publish_report.csv
+tools/private_patterns.txt

@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<title>{{ T('Демо: риск складов (Таджикистан)', 'Demo: warehouse risk (Tajikistan)') }}</title>
+<link rel="stylesheet" href="{{ request.script_root }}/static/vendor/leaflet/leaflet.css"/>
+<style>
+/* верхнее меню (то же оформление, что static/site.css; встроено, чтобы не зависеть от файла) */
+/* Только верхнее меню - для страниц со своей вёрсткой (главная карта) */
+:root { --accent:#2c3e50; }
+.topnav { display:flex; flex-wrap:wrap; gap:2px; background: var(--accent); padding: 0 12px; position: sticky; top:0; z-index: 2000; flex: none;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.topnav a { color:#dfe6ec; text-decoration:none; padding: 11px 13px; font-size: 14px; line-height: 1.5; }
+.topnav a:hover { background: rgba(255,255,255,.12); }
+.topnav a.active { background:#fff; color: var(--accent); font-weight:600; }
+</style>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; font-family: sans-serif; }
+  #stage { position: relative; flex: 1; min-height: 0; isolation: isolate; }
+  #map { position: absolute; inset: 0; }
+  .legend { background: white; padding: 8px 12px; font-size: 13px; line-height: 1.5; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.3); max-width: 260px; }
+  .legend b { display: block; margin-bottom: 4px; }
+  .caveat { color: #a33; font-size: 11px; margin-top: 6px; }
+
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none;
+  }
+  .panel-toggle { font-size: 11px; color: #666; padding: 0 4px; }
+  /* !important обязателен: #sidebar-body ниже задаёт display:flex через
+     ID-селектор, а ID всегда сильнее класса - без !important это правило
+     физически не могло сработать, сворачивание было сломано именно из-за
+     этого приоритета, а не из-за ошибки в JS */
+  .panel-body.collapsed { display: none !important; }
+
+  #sidebar {
+    position: absolute; top: 10px; left: 50px; z-index: 1000;
+    width: 260px; max-height: calc(100% - 20px); background: white;
+    border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.3);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #page-links {
+    display: flex; flex-wrap: wrap; gap: 2px 0; padding: 4px 6px;
+    border-bottom: 1px solid #eee; flex: none;
+  }
+  #page-links a {
+    font-size: 12.5px; text-decoration: none; color: #222; padding: 4px 6px; border-radius: 3px;
+  }
+  #page-links a:hover { background: #f0f0f0; }
+  #sidebar .panel-header { padding: 10px 12px 6px; }
+  #sidebar h3 { margin: 0; font-size: 14px; }
+  #sidebar-body { display: flex; flex-direction: column; min-height: 0; }
+  #site-search {
+    margin: 0 12px 8px; padding: 6px 8px; font-size: 13px;
+    border: 1px solid #ccc; border-radius: 4px; flex: none;
+  }
+  #site-list {
+    list-style: none; margin: 0; padding: 0 0 8px;
+    overflow-y: auto; max-height: 50vh; min-height: 0;
+  }
+  #site-list li {
+    padding: 6px 12px; cursor: pointer; font-size: 13px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #site-list li:hover { background: #f0f0f0; }
+  #site-list .risk-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; margin-left: 6px; }
+  #site-list li.hidden { display: none; }
+  #site-count { font-weight: normal; color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div id="stage">
+<div id="sidebar">
+  <div class="panel-header" id="sidebar-toggle">
+    <h3>{{ T('Склады', 'Warehouses') }} <span id="site-count"></span></h3>
+    <span class="panel-toggle">▾</span>
+  </div>
+  <div id="sidebar-body" class="panel-body">
+    <input id="site-search" type="text" placeholder="{{ T('Поиск по названию...', 'Search by name...') }}">
+    <ul id="site-list"></ul>
+  </div>
+</div>
+
+<div id="map"></div>
+</div>
+<script src="{{ request.script_root }}/static/vendor/leaflet/leaflet.js"></script>
+<script>const BASE = {{ request.script_root|tojson }};</script>
+<script>
+const map = L.map('map').setView([38.0, 69.2], 7);
+
+const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 18,
+});
+const satelliteLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution: 'Tiles &copy; Esri', maxZoom: 19 }
+);
+osmLayer.addTo(map);
+
+function colorFor(pctOrScore) {
+  if (pctOrScore === null || pctOrScore === undefined) return '#95a5a6';
+  if (pctOrScore >= 75) return '#e74c3c';
+  if (pctOrScore >= 50) return '#e67e22';
+  if (pctOrScore >= 25) return '#f1c40f';
+  return '#2ecc71';
+}
+
+// цвет по рангу приоритета (1 = самые высокие уровни среди известных складов);
+// те же границы 25/50/75, но по рангу склада, а не по перцентилю модели
+function colorForRank(rank, n) {
+  if (rank === null || rank === undefined || !n || n < 2) return '#95a5a6';
+  return colorFor(100 * (1 - (rank - 1) / (n - 1)));
+}
+
+function pctRankOf(values, v) {
+  const sorted = values.filter(x => x !== null && x !== undefined).sort((a, b) => a - b);
+  if (v === null || v === undefined || sorted.length < 2) return null;
+  let idx = sorted.findIndex(x => x >= v);
+  if (idx === -1) idx = sorted.length - 1;
+  return (idx / (sorted.length - 1)) * 100;
+}
+
+let modelInfo = { lowo_r2: null, lowo_rmse: null, trained_at: null };
+const rawLayer = L.layerGroup();
+const modelLayer = L.layerGroup();
+const priorityLayer = L.layerGroup();
+const samplesLayer = L.layerGroup();
+const msBuildingsLayer = L.layerGroup();
+const buffersLayer = L.layerGroup();
+const phLayer = L.layerGroup();
+const populationRasterLayer = L.layerGroup();
+const phRasterLayer = L.layerGroup();
+const phWmsLayer = L.layerGroup();
+const phWmsUncertaintyLayer = L.layerGroup();
+const hydrologyLayer = L.layerGroup();
+const jrcWaterExtentLayer = L.layerGroup();
+const jrcWaterOccurrenceLayer = L.layerGroup();
+const riskZonesLayer = L.layerGroup();
+const siteBounds = {}; // название склада -> L.LatLngBounds, для поиска/перехода
+
+fetch(BASE + '/api/sites').then(r => r.json()).then(data => {
+  // сырые данные: перцентиль медианы Pb среди складов (просто статистика, НЕ модель)
+  const rawValues = data.features.map(f => f.properties.pb_median);
+  const phValues = data.features.map(f => f.properties.soil_ph);
+
+  const first = data.features[0]?.properties || {};
+  modelInfo = { lowo_r2: first.lowo_r2, lowo_rmse: first.lowo_rmse, trained_at: first.trained_at };
+  updateLegend();
+  document.getElementById('site-count').textContent = `(${data.features.length})`;
+
+  data.features.forEach(f => {
+    const p = f.properties;
+    const NA = TL('н/д', 'n/a');
+    const pb = p.pb_median !== null && p.pb_median !== undefined ? p.pb_median.toFixed(1) : NA;
+    const asv = p.as_median !== null && p.as_median !== undefined ? p.as_median.toFixed(1) : NA;
+    const hg = p.hg_median !== null && p.hg_median !== undefined ? p.hg_median.toFixed(1) : NA;
+    const ph = p.soil_ph !== null && p.soil_ph !== undefined ? p.soil_ph.toFixed(2) : NA;
+    const pop = p.population_500m !== null && p.population_500m !== undefined ? Math.round(p.population_500m) : NA;
+    const label = p.label || p.name;
+    const modelScore = p.model_risk_score !== null && p.model_risk_score !== undefined
+      ? p.model_risk_score.toFixed(0) : null;
+
+    const priorityHtml = (p.priority_rank !== null && p.priority_rank !== undefined)
+      ? `<u>${TL('Приоритет (п.3 ТЗ)', 'Priority (ToR item 3)')}</u><br>${TL('Ранг', 'Rank')}: <b>${p.priority_rank}</b> ${TL('из', 'of')} 10 ` +
+        `(${TL('индекс', 'index')}: ${p.priority_composite_index !== null ? p.priority_composite_index.toFixed(2) : NA})<br>` +
+        `<span class="caveat">${TL('Относительно остальных 9 складов по Pb+As+Hg+Zn, не против официальных ПДК', 'Relative to the other 9 warehouses by Pb+As+Hg+Zn, not against official limits')}</span><br><br>`
+      : '';
+
+    const popupHtml = `<b>${label}</b><br>` +
+      priorityHtml +
+      `<u>${TL('Факт (сырые данные)', 'Measured (raw data)')}</u><br>` +
+      `${TL('Pb медиана', 'Pb median')}: ${pb} ppm, As: ${asv} ppm, Hg: ${hg} ppm<br>` +
+      `${TL('pH почвы', 'Soil pH')}: ${ph}, ${TL('население в 500м', 'population within 500 m')}: ${pop}<br>` +
+      `${TL('Точек', 'Points')}: ${p.n_points ?? 0}<br><br>` +
+      `<u>${TL('Модель Pb: индекс внутри склада', 'Pb model: within-warehouse index')}</u><br>` +
+      (modelScore !== null
+        ? `${TL('индекс', 'index')}: ${modelScore}/100 (${p.model_risk_level ?? NA}), ${TL('медиана по точкам склада', 'median over warehouse points')}`
+        : TL('модель ещё не считалась для этого склада', 'the model has not been run for this warehouse yet')) +
+      `<div class="caveat">${TL('Индекс — перцентиль предсказания среди всех точек выборки; модель ' +
+      'предсказывает отклонение точки от медианы СВОЕГО склада, поэтому индекс НЕ сравнивает склады ' +
+      'между собой (для сравнения складов см. ранг приоритета выше). Индекс посчитан на обучающих данных.',
+      'The index is the percentile of the prediction among all points; the model predicts the deviation of a point ' +
+      'from the median of ITS OWN warehouse, so the index does NOT compare warehouses with each other (use the ' +
+      'priority rank above for that). The index is computed on training data.')}</div>` +
+      (modelInfo.lowo_r2 !== null
+        ? `<div class="caveat">${TL('Точность модели на складе, не участвовавшем в обучении (LOWO R², Pb)', 'Model accuracy on a warehouse left out of training (LOWO R², Pb)')}: ${modelInfo.lowo_r2.toFixed(2)} — ` +
+          `${modelInfo.lowo_r2 < 0.2 ? TL('слабая; использовать как вспомогательный показатель, не как основание решений', 'weak; use as a supporting indicator, not as a basis for decisions') : TL('умеренная', 'moderate')}</div>`
+        : '');
+
+    // слой "сырые данные"
+    const rawColor = colorFor(pctRankOf(rawValues, p.pb_median));
+    L.geoJSON(f, {
+      style: { color: rawColor, fillColor: rawColor, fillOpacity: 0.4, weight: 2 },
+    }).bindPopup(popupHtml).addTo(rawLayer);
+
+    // слой "модель"
+    const modelColor = colorFor(p.model_risk_score);
+    const modelFeatureLayer = L.geoJSON(f, {
+      style: { color: modelColor, fillColor: modelColor, fillOpacity: 0.4, weight: 2 },
+    }).bindPopup(popupHtml).addTo(modelLayer);
+
+    // слой "приоритет" (по умолчанию): цвет по рангу склада среди известных складов
+    const prColor = colorForRank(p.priority_rank, data.features.length);
+    L.geoJSON(f, {
+      style: { color: prColor, fillColor: prColor, fillOpacity: 0.4, weight: 2 },
+    }).bindPopup(popupHtml).addTo(priorityLayer);
+
+    const center = modelFeatureLayer.getBounds().getCenter();
+    siteBounds[p.name] = modelFeatureLayer.getBounds();
+    addSiteListItem(p.name, colorForRank(p.priority_rank, data.features.length), p.priority_rank, label);
+
+    // слой "pH почвы" - маркер в центре склада, цвет по перцентилю среди
+    // складов (абсолютный диапазон узкий, ~7.2-7.7, перцентиль нагляднее)
+    if (p.soil_ph !== null && p.soil_ph !== undefined) {
+      const phColor = colorFor(pctRankOf(phValues, p.soil_ph));
+      L.circleMarker(center, {
+        radius: 8, color: '#2c3e50', weight: 1, fillColor: phColor, fillOpacity: 0.85,
+      }).bindTooltip(`${label}: pH ${ph}`).addTo(phLayer);
+    }
+
+    // здания, которые реально нашёл Microsoft ML для этого склада -
+    // пусто = либо реально безлюдно (проверяйте по снимку), либо пробел
+    // в покрытии датасета для этого quadkey-тайла
+    fetch(`${BASE}/api/buildings/${encodeURIComponent(p.name)}`).then(r => r.json()).then(bdata => {
+      if (!bdata.features || !bdata.features.length) return;
+      L.geoJSON(bdata, {
+        style: { color: '#8e44ad', weight: 1, fillColor: '#8e44ad', fillOpacity: 0.5 },
+      }).bindTooltip(`${label}: ${TL('здание', 'building')} (Microsoft ML)`).addTo(msBuildingsLayer);
+    });
+  });
+
+  priorityLayer.addTo(map); // по умолчанию - ранг приоритета (сравнение складов между собой)
+});
+
+fetch(BASE + '/api/samples').then(r => r.json()).then(data => {
+  L.geoJSON(data, {
+    pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+      radius: 3, color: 'black', weight: 1, fillOpacity: 0.6, fillColor: '#333',
+    }),
+    onEachFeature: (f, layer) => {
+      const p = f.properties;
+      const val = p.below_lod ? TL('< предела обнаружения', '< detection limit') : `${p.value} ppm`;
+      layer.bindPopup(`${p.site_label || p.site_id}<br>${TL('Pb (факт. замер)', 'Pb (measured)')}: ${val}<br>${TL('дата', 'date')}: ${p.sample_date}`);
+    }
+  }).addTo(samplesLayer);
+  samplesLayer.addTo(map);
+});
+
+fetch(BASE + '/api/buffers').then(r => r.json()).then(data => {
+  L.geoJSON(data, {
+    style: f => ({
+      color: f.properties.radius === '50m' ? '#e74c3c' : '#3498db',
+      weight: 1, fill: false, dashArray: '4 4',
+    }),
+    onEachFeature: (f, layer) => layer.bindTooltip(`${f.properties.site_label || f.properties.site_id}: ${TL('буфер', 'buffer')} ${f.properties.radius}`),
+  }).addTo(buffersLayer);
+});
+
+// растровая подложка населения (WorldPop) - уже скачанный GeoTIFF,
+// заранее сконвертированный в PNG на сервере (см. /api/population_bounds)
+fetch(BASE + '/api/population_bounds').then(r => {
+  if (!r.ok) return null;
+  return r.json();
+}).then(b => {
+  if (!b || b.error) return;
+  const bounds = [[b.south, b.west], [b.north, b.east]];
+  L.imageOverlay(BASE + '/static/population_overlay.png', bounds, { opacity: 0.75 }).addTo(populationRasterLayer);
+});
+
+// растровая подложка pH почвы (SoilGrids WCS, см. db/fetch_ph_raster.py) -
+// реальная поверхность на всю страну, не только 10 точек по складам
+fetch(BASE + '/api/ph_bounds').then(r => {
+  if (!r.ok) return null;
+  return r.json();
+}).then(b => {
+  if (!b || b.error) return;
+  const bounds = [[b.south, b.west], [b.north, b.east]];
+  L.imageOverlay(BASE + '/static/ph_overlay.png', bounds, { opacity: 0.7 }).addTo(phRasterLayer);
+});
+
+// то же самое pH, но напрямую как WMS-слой с сервера ISRIC - без
+// скачивания и конвертации, живые данные. Имя слоя подтверждено рабочим
+// (0-5см = верхний слой почвы, тот же, что используется в модели).
+// Цвет отличается от скачанного растра выше - ISRIC красит по своей
+// глобальной шкале (0-14), наш растр - по локальному контрасту внутри
+// Таджикистана; это два разных способа показать одни и те же данные,
+// не ошибка.
+L.tileLayer.wms('https://maps.isric.org/mapserv?map=/map/phh2o.map', {
+  layers: 'phh2o_0-5cm_mean',
+  format: 'image/png',
+  transparent: true,
+  opacity: 0.7,
+  attribution: 'ISRIC SoilGrids',
+}).addTo(phWmsLayer);
+
+// неопределённость самого прогноза SoilGrids - где ISRIC меньше уверен
+// в pH, там и наш признак в модели менее надёжен именно в этом месте
+L.tileLayer.wms('https://maps.isric.org/mapserv?map=/map/phh2o.map', {
+  layers: 'phh2o_0-5cm_uncertainty',
+  format: 'image/png',
+  transparent: true,
+  opacity: 0.7,
+  attribution: 'ISRIC SoilGrids',
+}).addTo(phWmsUncertaintyLayer);
+
+// гидрология (реки/каналы/водоёмы) по всей стране - через OSM Overpass,
+// см. db/fetch_hydrology_layer.py; статический файл, не из БД. Нужен для
+// самой модели (dist_to_water_m считается по этой же геометрии для точек
+// замеров) - в отличие от JRC ниже, которые чисто визуальные XYZ-тайлы.
+// грузится только при включении слоя: облегчённая копия (~1,4 МБ в gzip), отрисовка на canvas
+map.on('overlayadd', e => {
+  if (e.layer !== hydrologyLayer || hydrologyLayer.getLayers().length || hydrologyLayer._loading) return;
+  hydrologyLayer._loading = true;
+  fetch(BASE + '/api/hydrology').then(r => r.json()).then(data => {
+    if (!data.features || !data.features.length) return;
+    L.geoJSON(data, {
+      renderer: L.canvas({ padding: 0.3 }),
+      style: f => f.properties.kind === 'water_body'
+        ? { color: '#2980b9', weight: 1, fillColor: '#3498db', fillOpacity: 0.5 }
+        : { color: '#2980b9', weight: 1.5 },
+      interactive: false,
+    }).addTo(hydrologyLayer);
+  }).finally(() => { hydrologyLayer._loading = false; });
+});
+
+// JRC Global Surface Water (Pekel et al., Nature 2016) - спутниковый анализ
+// поверхностных вод по снимкам Landsat с 1984 года, авторитетнее и полнее
+// OSM в удалённых районах. Простые XYZ-тайлы, без бэкенда - но это только
+// визуализация: для расчёта dist_to_water_m в модели используется слой
+// выше (нужна векторная геометрия для точного измерения расстояний, не
+// тайлы). Extent - максимальная граница воды когда-либо замеченной;
+// Occurrence - как часто вода там была (0-100%, отличает постоянную воду
+// от сезонной/разлива).
+L.tileLayer(
+  'https://jeodpp.jrc.ec.europa.eu/jeodpp/services/ows/ts/hydrography/gsw-jrc?format=png&layers=HY.GSW.Extent&z={z}&x={x}&y={y}',
+  { attribution: 'JRC Global Surface Water', opacity: 0.8, maxZoom: 18 }
+).addTo(jrcWaterExtentLayer);
+
+L.tileLayer(
+  'https://jeodpp.jrc.ec.europa.eu/jeodpp/services/ows/ts/hydrography/gsw-jrc?format=png&layers=HY.GSW.Occurrence&z={z}&x={x}&y={y}',
+  { attribution: 'JRC Global Surface Water', opacity: 0.8, maxZoom: 18 }
+).addTo(jrcWaterOccurrenceLayer);
+
+// зоны концентрации загрязнения ВНУТРИ площадки (п.3 ТЗ, см.
+// db/build_risk_zones.py) - построены на реальных пробах (буфер+dissolve
+// точек по квартилям композитного индекса Pb+As+Hg+Zn внутри склада), не
+// на предсказании ML-модели. Цвета - та же шкала low/medium/high/critical,
+// что и в легенде модели, для единообразия восприятия.
+const RISK_ZONE_COLORS = { low: '#2ecc71', medium: '#f1c40f', high: '#e67e22', critical: '#e74c3c' };
+fetch(BASE + '/api/risk_zones').then(r => r.json()).then(data => {
+  if (!data.features || !data.features.length) return;
+  L.geoJSON(data, {
+    style: f => ({
+      color: RISK_ZONE_COLORS[f.properties.risk_level] || '#95a5a6',
+      weight: 1, fillColor: RISK_ZONE_COLORS[f.properties.risk_level] || '#95a5a6', fillOpacity: 0.45,
+    }),
+    onEachFeature: (f, layer) => layer.bindTooltip(
+      `${f.properties.site_label || f.properties.site_id}: ${TL('зона', 'zone')} "${f.properties.risk_level}" ` +
+      TL('(по реальным пробам, не по модели)', '(from measured samples, not the model)')),
+  }).addTo(riskZonesLayer);
+});
+
+// клик по карте - показывает значение pH, если включён хотя бы один из
+// pH-слоёв. Наш растр - через собственный эндпойнт (/api/ph_at_point).
+// WMS ISRIC - через WMS GetFeatureInfo, собранный вручную: базовый
+// Leaflet НЕ умеет это из коробки (нужен был бы отдельный плагин), поэтому
+// строим URL сами по спецификации WMS 1.1.1.
+function wmsGetFeatureInfoUrl(latlng, layerName) {
+  // по образцу реального рабочего запроса из QGIS: WMS 1.3.0 (не 1.1.1),
+  // параметр CRS (не SRS), пиксельные координаты I/J (не X/Y), проекция
+  // EPSG:3857 - используем ту же проекцию, в которой Leaflet и так всё
+  // считает внутри (L.CRS.EPSG3857), чтобы не городить свою.
+  const size = map.getSize();
+  const bounds = map.getBounds();
+  const sw3857 = L.CRS.EPSG3857.project(bounds.getSouthWest());
+  const ne3857 = L.CRS.EPSG3857.project(bounds.getNorthEast());
+  const pt = map.latLngToContainerPoint(latlng);
+  const params = {
+    SERVICE: 'WMS', VERSION: '1.3.0', REQUEST: 'GetFeatureInfo',
+    LAYERS: layerName, QUERY_LAYERS: layerName, STYLES: '',
+    BBOX: [sw3857.x, sw3857.y, ne3857.x, ne3857.y].join(','),
+    WIDTH: size.x, HEIGHT: size.y,
+    I: Math.round(pt.x), J: Math.round(pt.y),
+    CRS: 'EPSG:3857', FORMAT: 'image/png', INFO_FORMAT: 'text/html', FEATURE_COUNT: 1,
+  };
+  const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  return 'https://maps.isric.org/mapserv?map=/map/phh2o.map&' + qs;
+}
+
+map.on('click', async (e) => {
+  if (map.hasLayer(phRasterLayer)) {
+    const r = await fetch(`${BASE}/api/ph_at_point?lat=${e.latlng.lat}&lon=${e.latlng.lng}`);
+    const data = await r.json();
+    const msg = data.ph !== undefined ? `pH (${TL('наш растр', 'project raster')}): <b>${data.ph}</b>` : `pH: ${data.error}`;
+    L.popup().setLatLng(e.latlng).setContent(msg).openOn(map);
+    return;
+  }
+  if (map.hasLayer(phWmsLayer)) {
+    const url = wmsGetFeatureInfoUrl(e.latlng, 'phh2o_0-5cm_mean');
+    const r = await fetch(url);
+    const html = await r.text();
+    // ISRIC отдаёт <b>Value: </b><span id="value">76</span> (pH*10) - между
+    // "Value:" и числом есть HTML-тег, поэтому ищем именно внутри span,
+    // а не сразу после текста "Value:". У них, кстати, дублируется
+    // id="value" на "Query Layer" ниже - берём первое совпадение (число)
+    const m = html.match(/<span id="value">(-?\d+(?:\.\d+)?)<\/span>/);
+    const content = m
+      ? `<b>pH (ISRIC WMS)</b><br>pH: <b>${(parseFloat(m[1]) / 10).toFixed(2)}</b>`
+      : `<b>pH (ISRIC WMS)</b><div class="caveat">${TL('Не удалось найти значение в ответе сервиса - ' +
+        'включите слой "pH почвы (растр SoilGrids, вся страна)" выше, там клик работает надёжно.',
+        'No value found in the service response - switch on the layer "Soil pH (SoilGrids raster, whole country)" above, where clicks work reliably.')}</div>`;
+    L.popup().setLatLng(e.latlng).setContent(content).openOn(map);
+  }
+});
+
+function addSiteListItem(name, dotColor, priorityRank, disp) {
+  const ul = document.getElementById('site-list');
+  const li = document.createElement('li');
+  const label = document.createElement('span');
+  label.textContent = (priorityRank !== null && priorityRank !== undefined)
+    ? `${disp || name} (${TL('приоритет', 'priority')} ${priorityRank})` : (disp || name);
+  const dot = document.createElement('span');
+  dot.className = 'risk-dot';
+  dot.style.background = dotColor;
+  li.appendChild(label);
+  li.appendChild(dot);
+  li.addEventListener('click', () => {
+    const b = siteBounds[name];
+    if (b) map.fitBounds(b, { maxZoom: 17, padding: [40, 40] });
+  });
+  ul.appendChild(li);
+}
+
+document.getElementById('site-search').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll('#site-list li').forEach(li => {
+    const match = li.textContent.toLowerCase().includes(q);
+    li.classList.toggle('hidden', !match);
+  });
+});
+
+// сворачиваемые панели - список складов и легенда, чтобы не занимали
+// экран, когда складов станет много
+function makeCollapsible(headerEl, bodyEl, toggleEl) {
+  headerEl.addEventListener('click', () => {
+    const collapsed = bodyEl.classList.toggle('collapsed');
+    toggleEl.textContent = collapsed ? '▸' : '▾';
+  });
+}
+makeCollapsible(
+  document.getElementById('sidebar-toggle'),
+  document.getElementById('sidebar-body'),
+  document.getElementById('sidebar-toggle').querySelector('.panel-toggle')
+);
+
+L.control.layers({
+  'OpenStreetMap': osmLayer,
+  [TL('Спутник (Esri)', 'Satellite (Esri)')]: satelliteLayer,
+}, {
+  [TL('Приоритет склада (ранг среди 10 складов) - по умолчанию', 'Warehouse priority (rank among 10 warehouses) - default')]: priorityLayer,
+  [TL('Модель Pb: индекс внутри склада (не сравнивает склады)', 'Pb model: within-warehouse index (does not compare warehouses)')]: modelLayer,
+  [TL('Сырые данные (просто медиана, без ML)', 'Raw data (plain median, no ML)')]: rawLayer,
+  [TL('Точки замеров', 'Measurement points')]: samplesLayer,
+  [TL('Зоны загрязнения внутри площадки (по пробам, п.3 ТЗ)', 'Contamination zones within the site (from samples, ToR item 3)')]: riskZonesLayer,
+  [TL('Буферы 50м/100м', 'Buffers 50 m / 100 m')]: buffersLayer,
+  [TL('pH почвы (по складу, точки)', 'Soil pH (per warehouse, points)')]: phLayer,
+  [TL('pH почвы (растр SoilGrids, вся страна)', 'Soil pH (SoilGrids raster, whole country)')]: phRasterLayer,
+  [TL('pH почвы (WMS, живой слой ISRIC)', 'Soil pH (WMS, live ISRIC layer)')]: phWmsLayer,
+  [TL('pH: неопределённость прогноза ISRIC', 'pH: ISRIC prediction uncertainty')]: phWmsUncertaintyLayer,
+  [TL('Гидрология (реки/каналы, OSM)', 'Hydrology (rivers/canals, OSM)')]: hydrologyLayer,
+  [TL('Вода JRC (спутник, макс. граница)', 'JRC water (satellite, max extent)')]: jrcWaterExtentLayer,
+  [TL('Вода JRC (спутник, частота)', 'JRC water (satellite, occurrence)')]: jrcWaterOccurrenceLayer,
+  [TL('Население WorldPop (растр)', 'WorldPop population (raster)')]: populationRasterLayer,
+  [TL('Здания по Microsoft ML (для проверки пробелов)', 'Microsoft ML buildings (to check gaps)')]: msBuildingsLayer,
+}, { collapsed: true }).addTo(map);
+
+const legend = L.control({ position: 'bottomleft' });
+legend.onAdd = function () {
+  const div = L.DomUtil.create('div', 'legend');
+  div.innerHTML =
+    '<div class="panel-header" id="legend-toggle"><b style="margin:0">' + TL('Легенда', 'Legend') + '</b>' +
+    '<span class="panel-toggle">▾</span></div>' +
+    '<div id="legend-box" class="panel-body"></div>';
+  L.DomEvent.disableClickPropagation(div);
+  return div;
+};
+legend.addTo(map);
+
+makeCollapsible(
+  document.getElementById('legend-toggle'),
+  document.getElementById('legend-box'),
+  document.getElementById('legend-toggle').querySelector('.panel-toggle')
+);
+// при запуске легенда свёрнута, чтобы не закрывать карту; раскрывается по нажатию на заголовок
+document.getElementById('legend-box').classList.add('collapsed');
+document.getElementById('legend-toggle').querySelector('.panel-toggle').textContent = '▸';
+
+function updateLegend() {
+  const div = document.getElementById('legend-box');
+  if (!div) return;
+  const sq = (c) => `<span style="color:${c}">&#9632;</span>`;
+  div.innerHTML =
+    '<b>' + TL('Приоритет склада (по умолчанию)', 'Warehouse priority (default)') + '</b>' +
+    sq('#e74c3c') + TL(' ранг 1-3: самые высокие уровни', ' rank 1-3: highest levels') + '<br>' +
+    sq('#e67e22') + TL(' ранг 4-5', ' rank 4-5') + '<br>' +
+    sq('#f1c40f') + TL(' ранг 6-7', ' rank 6-7') + '<br>' +
+    sq('#2ecc71') + TL(' ранг 8-10: самые низкие', ' rank 8-10: lowest') + '<br>' +
+    '<div class="caveat">' + TL('Ранг по медиане композитного индекса Pb+As+Hg+Zn: превышение над медианой ' +
+    'всей выборки (в логарифмах). Сравнение 10 известных складов между собой, не риск для здоровья ' +
+    'и не сравнение с ПДК.', 'Rank by the median composite index Pb+As+Hg+Zn: excess over the median of the whole ' +
+    'survey (in logs). A comparison of the 10 known warehouses with each other, not a health risk ' +
+    'and not a comparison with regulatory limits.') + '</div>' +
+    '<b style="margin-top:8px">' + TL('Индекс внутри склада (слои «Модель» и «Зоны»)', 'Within-warehouse index ("Model" and "Zones" layers)') + '</b>' +
+    sq('#e74c3c') + TL(' верхняя четверть (75-100)', ' top quarter (75-100)') + '<br>' +
+    sq('#e67e22') + ' 50-75<br>' +
+    sq('#f1c40f') + ' 25-50<br>' +
+    sq('#2ecc71') + TL(' нижняя четверть (0-25)', ' bottom quarter (0-25)') + '<br>' +
+    '<div class="caveat">' + TL('Четверти считаются по перцентилю, поэтому в каждой группе всегда ~25% точек: ' +
+    'цвет показывает положение точки внутри склада, а не концентрацию или превышение порога. ' +
+    'У слоя «Зоны» четверти считаются внутри каждого склада по реальным пробам (Pb+As+Hg+Zn); ' +
+    'у слоя «Модель» - по предсказанию модели Pb.', 'Quarters are percentile-based, so each group always holds ~25% of points: ' +
+    'the colour shows the position of a point within its warehouse, not a concentration or a threshold exceedance. ' +
+    'For the "Zones" layer quarters are computed within each warehouse from measured samples (Pb+As+Hg+Zn); ' +
+    'for the "Model" layer, from the Pb model prediction.') + '</div>' +
+    (modelInfo.trained_at
+      ? `<div class="caveat">${TL('Модель Pb обучена', 'Pb model trained')}: ${modelInfo.trained_at}<br>` +
+        `LOWO R²=${modelInfo.lowo_r2 !== null ? modelInfo.lowo_r2.toFixed(2) : TL('н/д', 'n/a')} - ${TL('проверка на складе, ' +
+        'не участвовавшем в обучении. Диапазон по разным случайным зёрнам: 0.16-0.17.', 'validation on a warehouse left out of ' +
+        'training. Range across random seeds: 0.16-0.17.')}</div>`
+      : '<div class="caveat">' + TL('Модель ещё не считалась - запустите db/run_model_and_store.py', 'The model has not been run yet - run db/run_model_and_store.py') + '</div>');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ T('Приоритизация — демо ML TJ', 'Prioritization — ML TJ demo') }}{% endblock %}
+{% block body %}
+<h1>{{ T('Приоритизация складов', 'Warehouse prioritization') }}</h1>
+<p class="lead">{{ T('Какие площадки хуже остальных в выборке и разбираются в первую очередь.', 'Which sites are worse than the rest of the sample and should be addressed first.') }}</p>
+
+<div class="info">{{ T('Индекс на точку — среднее по Pb, As, Hg, Zn от log(значение) минус log(общестрановая медиана выборки по веществу); индекс склада — медиана по его точкам. Положительное значение — выше типичного уровня по 10 складам.', 'Point index: the mean over Pb, As, Hg, Zn of log(value) minus log(survey-wide median for that substance); the warehouse index is the median over its points. A positive value means above the typical level across the 10 warehouses.') }}</div>
+
+<div class="scroll"><table class="data">
+  <thead><tr>
+    <th class="n">{{ T('Ранг', 'Rank') }}</th><th>{{ T('Склад', 'Warehouse') }}</th><th class="n">{{ T('Индекс', 'Index') }}</th><th>{{ T('Масштаб', 'Scale') }}</th>
+    <th class="n">Pb</th><th class="n">As</th><th class="n">Hg</th><th class="n">Zn</th>
+    <th class="n">{{ T('Точек', 'Points') }}</th>
+    {% if has_zones %}<th>{{ T('Доли площади зон', 'Zone area shares') }}</th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td class="n"><b>{{ r.priority_rank if r.priority_rank is not none else '—' }}</b></td>
+    <td>{{ r.name|nm }}</td>
+    <td class="n">{{ r.priority_composite_index|num }}</td>
+    <td><div class="bar"><i style="width: {{ '%.0f'|format(r.idx_pct) }}%"></i></div></td>
+    <td class="n">{{ r.pb|num('{:.1f}') }}</td>
+    <td class="n">{{ r['as']|num('{:.1f}') }}</td>
+    <td class="n">{{ r.hg|num('{:.1f}') }}</td>
+    <td class="n">{{ r.zn|num('{:.1f}') }}</td>
+    <td class="n">{{ r.n_points }}</td>
+    {% if has_zones %}
+    <td>
+      {% if r.zone_share %}
+      <div class="stack" title="{% for l in levels %}{{ l }}: {{ '%.0f'|format(r.zone_share.get(l, 0)) }}%  {% endfor %}">
+        {% for l in levels %}{% if r.zone_share.get(l) %}<i style="width: {{ '%.1f'|format(r.zone_share[l]) }}%; background: {{ colors[l] }}"></i>{% endif %}{% endfor %}
+      </div>
+      {% else %}<span class="note">{{ T('нет зон', 'no zones') }}</span>{% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="note">{{ T('Pb, As, Hg, Zn — медианы по точкам склада, мг/кг (значения ниже предела обнаружения исключены из медиан).', 'Pb, As, Hg, Zn: medians over the warehouse points, mg/kg (values below the detection limit are excluded from the medians).') }}
+{% if has_zones %}{{ T('Зоны', 'Zones') }}: {% for l in levels %}<span style="color:{{ colors[l] }}">&#9632;</span> {{ l }}&nbsp;&nbsp;{% endfor %}{{ T('— доли считаются внутри каждого склада по квартилям индекса, поэтому на любом складе есть и «низкая», и «критическая» зона; сравнивать зоны между складами по цвету нельзя.', '— shares are computed within each warehouse by index quartiles, so every warehouse has both a "low" and a "critical" zone; zones cannot be compared between warehouses by colour.') }}{% endif %}</p>
+
+{% if lang == 'en' %}<div class="caveat">The rank is relative: a comparison of the 10 warehouses with each other. Measurements are compared with international guideline values on the <a href="{{ request.script_root }}/norms">"Standards"</a> page; national limits have not yet been confirmed by the client. Rb and Co are excluded from the index pending a geochemist's opinion. <a href="{{ request.script_root }}/export">Download the table as CSV</a>.</div>{% else %}<div class="caveat">Ранг — относительный: сравнение 10 складов между собой. Сравнение замеров с международными ориентирами — на странице <a href="{{ request.script_root }}/norms">«Нормативы»</a>; национальные ПДК пока не подтверждены заказчиком. Rb и Co не включены в индекс до заключения геохимика. <a href="{{ request.script_root }}/export">Выгрузка таблицы в CSV</a>.</div>{% endif %}
+{% endblock %}

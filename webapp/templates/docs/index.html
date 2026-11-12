@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ T('Документы пилота','Pilot documents') }}{% endblock %}
+{% block body %}
+<h1>{{ T('Документы пилота','Pilot documents') }}</h1>
+<p class="lead">{{ T('Методики, описание подготовки данных, презентация и блокноты. Все материалы открываются на стенде без доступа в интернет.','Methodologies, data preparation, the presentation and notebooks. All materials open on the stand without internet access.') }}</p>
+<div class="cards">
+{% for d in items %}
+  <div class="card">
+    <h3>{{ d.title }}</h3>
+    <p>{{ d.text }}</p>
+    <a class="btn" href="{{ request.script_root }}{{ d.href }}">{{ T('Открыть PDF','Open PDF') if d.href.endswith('.pdf') else T('Открыть','Open') }}</a>
+    {% if d.has_pdf and not d.href.endswith('.pdf') %}&nbsp;<a href="{{ request.script_root }}/docs/{{ d.pdf[:-4]|replace('_', '-') }}.pdf">PDF</a>{% endif %}
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

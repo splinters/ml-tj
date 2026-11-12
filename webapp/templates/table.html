@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<title>{{ T('Таблицы — демо ML TJ', 'Tables — ML TJ demo') }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+<style>
+  h2 { margin-top: 32px; }
+  a.back { font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+  th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { background: #f0f0f0; cursor: pointer; position: sticky; top: 0; user-select: none; }
+  th:hover { background: #e2e2e2; }
+  th.sorted-asc::after { content: " \25B2"; }
+  th.sorted-desc::after { content: " \25BC"; }
+  tr:nth-child(even) { background: #fafafa; }
+  .table-wrap { max-height: 70vh; overflow: auto; border: 1px solid #ccc; }
+  .below-lod { color: #999; font-style: italic; }
+  .note { color: #666; font-size: 12px; margin: 4px 0 0; }
+</style>
+</head>
+<body class="page">
+{% include "_nav.html" %}
+<main style="padding:20px">
+<h1>{{ T('Данные проекта', 'Project data') }}</h1>
+
+<h2>{{ T('Склады (сводка)', 'Warehouses (summary)') }}</h2>
+<div class="table-wrap">
+<table id="sites-table">
+  <thead><tr>
+    {% for col in sites_columns %}<th>{{ col }}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+    {% for row in sites_rows %}
+    <tr>
+      {% for col in sites_columns %}
+      <td>{% if col in ['site_id', 'name'] %}{{ row[col]|nm }}{% elif col == 'status' %}{{ row[col]|vl if row[col] is not none else '' }}{% else %}{{ '%.2f'|format(row[col]) if row[col] is number and row[col] == row[col] and col not in ['n_points'] else (row[col] if row[col] is not none else '') }}{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="note">{{ sites_rows|length }} {{ T('складов. Клик по заголовку колонки — сортировка.', 'warehouses. Click a column header to sort.') }}</p>
+
+<h2>{{ T('Точки замеров (все вещества)', 'Measurement points (all substances)') }}</h2>
+<div class="table-wrap">
+<table id="samples-table">
+  <thead><tr>
+    {% for col in samples_columns %}<th>{{ col }}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+    {% for row in samples_rows %}
+    <tr class="{{ 'below-lod' if row['below_lod'] else '' }}">
+      {% for col in samples_columns %}
+      <td>{% if col == 'site_id' %}{{ row[col]|nm }}{% else %}{{ '%.3f'|format(row[col]) if row[col] is number and row[col] == row[col] and col in ['value','lat','lon','dist_to_water_m','dist_to_building_m'] else (row[col] if row[col] is not none else '') }}{% endif %}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="note">{{ samples_rows|length }} {{ T('строк (по одной на вещество на точку). Серым — значения ниже предела обнаружения.', 'rows (one per substance per point). Grey: values below the detection limit.') }}</p>
+
+</main>
+<script>
+// простая сортировка по клику на заголовок, без библиотек
+document.querySelectorAll('table').forEach(table => {
+  const headers = table.querySelectorAll('th');
+  headers.forEach((th, colIdx) => {
+    let asc = true;
+    th.addEventListener('click', () => {
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort((a, b) => {
+        const av = a.children[colIdx].textContent.trim();
+        const bv = b.children[colIdx].textContent.trim();
+        const an = parseFloat(av), bn = parseFloat(bv);
+        const bothNumeric = !isNaN(an) && !isNaN(bn) && av !== '' && bv !== '';
+        const cmp = bothNumeric ? (an - bn) : av.localeCompare(bv, window.LANG || 'ru');
+        return asc ? cmp : -cmp;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+      headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+      th.classList.add(asc ? 'sorted-asc' : 'sorted-desc');
+      asc = !asc;
+    });
+  });
+});
+</script>
+</body>
+</html>

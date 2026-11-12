@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ T('Карта СОЗ: риск для детей','POPs map: risk to children') }}</title>
+<link rel="stylesheet" href="{{ request.script_root }}/static/vendor/leaflet/leaflet.css"/>
+<link rel="stylesheet" href="{{ request.script_root }}/static/nav.css"/>
+<style>
+:root { --accent:#2c3e50; --line:#e2e5e8; --muted:#667; --c1:#2e7d32; --c2:#f9a825; --c3:#ef6c00; --c4:#b71c1c; }
+html, body { height:100%; margin:0; }
+body { display:flex; flex-direction:column; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:#222; }
+#stage { position:relative; flex:1; min-height:0; isolation:isolate; }
+#map { position:absolute; inset:0; background:#eef1f3; }
+.box { background:#fff; border-radius:6px; box-shadow:0 1px 5px rgba(0,0,0,.25); }
+#side { position:absolute; top:10px; left:52px; bottom:10px; width:300px; z-index:1000; display:flex; flex-direction:column; overflow:hidden; }
+#side .sec { padding:9px 12px; border-bottom:1px solid var(--line); flex:none; }
+#side h3 { margin:0 0 6px; font-size:14px; }
+.themes { display:flex; gap:4px; }
+.themes a { flex:1; text-align:center; font-size:12.5px; padding:6px 4px; border-radius:4px; text-decoration:none; color:var(--accent); border:1px solid var(--accent); }
+.themes a.on { background:var(--accent); color:#fff; }
+.kpis { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.kpi { background:#f5f7f8; border-radius:4px; padding:5px 7px; }
+.kpi b { display:block; font-size:16px; } .kpi span { font-size:11px; color:var(--muted); line-height:1.2; display:block; }
+.seg { display:flex; flex-wrap:wrap; gap:3px; }
+.seg button { font-size:12px; padding:4px 7px; border:1px solid #c9ced3; background:#fff; border-radius:4px; cursor:pointer; }
+.seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+.row { display:flex; gap:6px; align-items:center; margin-top:6px; font-size:12.5px; }
+.row select { flex:1; min-width:0; }
+select, input[type=text], input[type=number] { font-size:12.5px; padding:4px 6px; border:1px solid #c9ced3; border-radius:4px; }
+#search { width:100%; box-sizing:border-box; }
+#list { list-style:none; margin:0; padding:0; overflow-y:auto; flex:1; min-height:0; }
+#list li { padding:6px 12px; font-size:12.5px; cursor:pointer; display:flex; gap:8px; align-items:flex-start; border-bottom:1px solid #f2f3f4; }
+#list li:hover { background:#f3f6f8; }
+#list .rk { color:var(--muted); width:26px; flex:none; text-align:right; }
+#list .nm { flex:1; } #list .nm small { color:var(--muted); display:block; }
+.dot { width:11px; height:11px; border-radius:50%; flex:none; margin-top:3px; border:2px solid transparent; box-sizing:border-box; }
+.dot.pred { background:#fff !important; }
+#count { color:var(--muted); font-weight:normal; font-size:12px; }
+#card { position:absolute; top:10px; right:10px; bottom:10px; width:420px; z-index:1000; overflow-y:auto; display:none; font-size:13px; }
+#card .hd { position:sticky; top:0; background:#fff; padding:10px 14px 8px; border-bottom:1px solid var(--line); z-index:1; }
+#card .hd h2 { margin:0; font-size:15px; padding-right:24px; }
+#card .hd small { color:var(--muted); }
+#card .x { position:absolute; right:10px; top:8px; cursor:pointer; font-size:18px; color:#888; border:0; background:none; }
+#card .bd { padding:8px 14px 16px; }
+#card h4 { margin:14px 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.03em; color:var(--accent); }
+.badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11.5px; color:#fff; white-space:nowrap; }
+.comp { display:grid; grid-template-columns:110px 1fr 40px; gap:4px 8px; align-items:center; font-size:12px; }
+.bar { height:8px; background:#eceff1; border-radius:4px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--accent); }
+table.t { border-collapse:collapse; width:100%; font-size:12px; }
+table.t td, table.t th { border-bottom:1px solid #eef0f2; padding:3px 4px; text-align:left; vertical-align:top; }
+table.t th { color:var(--muted); font-weight:600; }
+.n { text-align:right !important; white-space:nowrap; }
+.over { color:#b71c1c; font-weight:600; }
+details { margin:3px 0; } details summary { cursor:pointer; } details p { margin:4px 0 6px 14px; color:#444; font-size:12px; }
+.note { color:var(--muted); font-size:11.5px; margin-top:6px; }
+.warn { background:#fff6e5; border-left:3px solid #ef6c00; padding:6px 9px; font-size:12px; margin:8px 0; }
+.legend { padding:8px 11px; font-size:12px; line-height:1.55; max-width:230px; }
+.legend b { display:block; margin-bottom:3px; }
+.legend i { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+.legend i.ring { background:#fff !important; border:2px solid #555; box-sizing:border-box; }
+#newbtn { width:100%; padding:7px; font-size:13px; background:#00695c; color:#fff; border:0; border-radius:4px; cursor:pointer; }
+#newbtn.on { background:#b71c1c; }
+#form label { display:block; font-size:12px; margin:6px 0 2px; color:#333; }
+#form select, #form input { width:100%; box-sizing:border-box; }
+#form .two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+#form button { margin-top:10px; padding:7px 12px; background:var(--accent); color:#fff; border:0; border-radius:4px; cursor:pointer; font-size:13px; }
+.res { background:#f5f7f8; border-radius:6px; padding:9px 11px; margin-top:10px; }
+.res .big { font-size:16px; font-weight:600; }
+.leaflet-container { font:inherit; }
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div id="stage">
+<div id="map"></div>
+
+<div id="side" class="box">
+  <div class="sec">
+    <div class="themes">
+      <a href="{{ request.script_root }}/">{{ T('Тяжёлые металлы (XRF)','Heavy metals (XRF)') }}</a>
+      <a class="on" href="{{ request.script_root }}/pop">{{ T('СОЗ (пестициды)','POPs (pesticides)') }}</a>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="kpis" id="kpis"></div>
+  </div>
+  <div class="sec">
+    <h3>{{ T('Раскраска участков','Colour sites by') }}</h3>
+    <div class="seg" id="modes">
+      <button data-m="risk" class="on">{{ T('Риск для детей','Risk to children') }}</button>
+      <button data-m="hazard">{{ T('Загрязнение','Contamination') }}</button>
+      <button data-m="screen">{{ T('Скрининг (модель)','Screening (model)') }}</button>
+    </div>
+    <div class="row">
+      <select id="f-src"><option value="">{{ T('Все участки','All sites') }}</option><option value="lab">{{ T('Только с анализами','With lab data only') }}</option><option value="pred">{{ T('Только без анализов','Without lab data only') }}</option></select>
+      <select id="f-reg"><option value="">{{ T('Все области','All regions') }}</option></select>
+    </div>
+  </div>
+  <div class="sec">
+    <button id="newbtn">{{ T('+ Оценить новый участок','+ Assess a new site') }}</button>
+  </div>
+  <div class="sec">
+    <div class="seg" id="lists">
+      <button data-l="risk" class="on">{{ T('Рейтинг риска','Risk ranking') }}</button>
+      <button data-l="survey">{{ T('Кандидаты на обследование','Candidates for survey') }}</button>
+    </div>
+    <div class="row"><input id="search" type="text" placeholder="{{ T('Поиск: название или код TJ','Search: name or TJ code') }}"></div>
+    <div class="row" style="justify-content:space-between"><span id="count"></span></div>
+  </div>
+  <ul id="list"></ul>
+</div>
+
+<div id="card" class="box"></div>
+</div>
+
+<script src="{{ request.script_root }}/static/vendor/leaflet/leaflet.js"></script>
+<script>
+const BASE = {{ request.script_root|tojson }};
+const BASEMAP = {{ basemap|tojson }};
+const SUMMARY = {{ summary|tojson }};
+const COL = { 'низкий':'#2e7d32', 'средний':'#f9a825', 'высокий':'#ef6c00', 'очень высокий':'#b71c1c' };
+const CLS_EN = { 'низкий':'low', 'средний':'medium', 'высокий':'high', 'очень высокий':'very high' };
+const CLS = k => k == null ? '' : TL(k, CLS_EN[k] || k);
+const HAZ = [[0.1,'#2e7d32',TL('< 0,1 мг/кг (ниже норматива)','< 0.1 mg/kg (below the standard)')],[10,'#f9a825',TL('0,1–10 мг/кг','0.1–10 mg/kg')],[100,'#ef6c00',TL('10–100 мг/кг','10–100 mg/kg')],[1e9,'#b71c1c',TL('≥ 100 мг/кг','≥ 100 mg/kg')]];
+const MG = TL('мг/кг', 'mg/kg');
+const fmt = (v, d=2) => v === null || v === undefined ? '—' : (+v).toLocaleString(TL('ru-RU','en-US'), {maximumFractionDigits:d});
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const map = L.map('map', {zoomControl:true}).setView([38.6, 69.6], 7);
+const base = {};
+if (BASEMAP !== 'none') {
+  base['OpenStreetMap'] = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'&copy; OpenStreetMap', maxZoom:18}).addTo(map);
+  base[TL('Спутник (Esri)','Satellite (Esri)')] = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'&copy; Esri', maxZoom:19});
+}
+const RELIEF = TL('Рельеф (офлайн)', 'Terrain (offline)');
+base[RELIEF] = L.layerGroup();
+base[TL('Без подложки','No basemap')] = L.layerGroup();
+if (BASEMAP === 'none') base[RELIEF].addTo(map);
+function loadHillshade() {
+  if (base[RELIEF].getLayers().length) return;
+  fetch(BASE + '/pop/api/hillshade_bounds').then(r => r.ok ? r.json() : null).then(b => { if (b)
+    L.imageOverlay(BASE + '/static/pop_hillshade.png', [[b.south, b.west], [b.north, b.east]], {opacity:1}).addTo(base[RELIEF]); });
+}
+if (BASEMAP === 'none') loadHillshade();
+map.on('baselayerchange', e => { if (e.name === RELIEF) loadHillshade(); });
+
+const siteLayer = L.layerGroup().addTo(map);
+const sampleLayer = L.layerGroup();
+const popLayer = L.layerGroup();
+const kidsLayer = L.layerGroup();
+const u5Layer = L.layerGroup();
+const WP_LAYERS = new Map([[kidsLayer, 'children_u18_2025'], [u5Layer, 'children_u5_2025'], [popLayer, 'population_2025']]);
+const hydroLayer = L.layerGroup();
+const newLayer = L.layerGroup().addTo(map);
+L.control.layers(base, {
+  [TL('Участки СОЗ','POPs sites')]: siteLayer, [TL('Пробы с координатами','Samples with coordinates')]: sampleLayer,
+  [TL('Дети до 18 лет (WorldPop 2025)','Children under 18 (WorldPop 2025)')]: kidsLayer, [TL('Дети до 5 лет (WorldPop 2025)','Children under 5 (WorldPop 2025)')]: u5Layer, [TL('Население (WorldPop 2025)','Population (WorldPop 2025)')]: popLayer, [TL('Реки и водоёмы (OSM)','Rivers and water bodies (OSM)')]: hydroLayer,
+}, {position:'topright', collapsed:true}).addTo(map);
+L.control.scale({imperial:false, position:'bottomright'}).addTo(map);
+const selLayer = L.layerGroup().addTo(map);
+
+let SITES = [], MODE = 'risk', LISTMODE = 'risk', markers = {};
+
+function colorOf(p) {
+  if (MODE === 'risk') return COL[p.child_risk_class] || '#999';
+  if (MODE === 'screen') return COL[p.screen_class] || '#999';
+  if (p.burden === null) return COL[p.screen_class] || '#999';
+  for (const [t, c] of HAZ) if (p.burden < t) return c;
+}
+const measured = p => p.hazard_source === 'анализы';
+const radius = p => 4 + Math.sqrt((p.children_1000m || 0) / 40);
+
+function styleOf(p) {
+  const c = colorOf(p), m = MODE === 'screen' ? true : measured(p);
+  return m ? {radius:radius(p), color:'#222', weight:1, fillColor:c, fillOpacity:.85}
+           : {radius:radius(p), color:c, weight:3, fillColor:'#fff', fillOpacity:.9, dashArray:'3 2'};
+}
+
+const legend = L.control({position:'bottomright'});
+legend.onAdd = () => { const d = L.DomUtil.create('div', 'legend box'); d.id = 'legend'; return d; };
+legend.addTo(map);
+function drawLegend() {
+  let h = '';
+  if (MODE === 'risk') {
+    h = '<b>' + TL('Индекс риска для детей','Child risk index') + '</b>' + Object.entries(COL).map(([k,c]) => `<div><i style="background:${c}"></i>${CLS(k)}</div>`).join('');
+    h += '<div class="note">' + TL('опасность × дети рядом × пути воздействия (логика CCRI-DRM)','hazard × children nearby × exposure pathways (CCRI-DRM logic)') + '</div>';
+  } else if (MODE === 'hazard') {
+    h = '<b>' + TL('Максимум загрязнения на участке','Maximum contamination at the site') + '</b><div class="note" style="margin:0 0 3px">' + TL('ДДТ+ДДД+ДДЕ или сумма ГХЦГ, норматив ДДТ 0,1 мг/кг','DDT+DDD+DDE or total HCH; DDT standard 0.1 mg/kg') + '</div>'
+      + HAZ.map(([t,c,l]) => `<div><i style="background:${c}"></i>${l}</div>`).join('');
+  } else {
+    h = '<b>' + TL('Скрининг: класс модели','Screening: model class') + '</b>' + ['низкий','средний','высокий'].map(k => `<div><i style="background:${COL[k]}"></i>${CLS(k)} — ${TL('сильно загрязнено','strongly contaminated:')} ${Math.round(100*SUMMARY.share_positive_by_class[k])}% ${TL('участков','of sites')}</div>`).join('');
+    h += '<div class="note">' + TL('цель: ≥100 мг/кг; оценка до анализа (анкета, место, соседи, открытые данные)','target: ≥100 mg/kg; estimate before laboratory analysis (survey form, location, neighbours, open data)') + '</div>';
+  }
+  if (MODE !== 'screen') h += '<div style="margin-top:4px"><i style="background:#999"></i>' + TL('измерено','measured') + '</div><div><i class="ring"></i>' + TL('прогноз (анализов нет)','forecast (no lab data)') + '</div>';
+  h += '<div class="note">' + TL('размер круга — число детей в радиусе 1 км','circle size: number of children within 1 km') + '</div>';
+  document.getElementById('legend').innerHTML = h;
+}
+
+function filtered() {
+  const src = document.getElementById('f-src').value, reg = document.getElementById('f-reg').value;
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  return SITES.filter(f => {
+    const p = f.properties;
+    if (src === 'lab' && !measured(p)) return false;
+    if (src === 'pred' && measured(p)) return false;
+    if (reg && p.region !== reg) return false;
+    if (q && !(p.site_name.toLowerCase().includes(q) || (p.label||'').toLowerCase().includes(q) || (p.tj_code||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function render() {
+  siteLayer.clearLayers(); markers = {};
+  const fs = filtered();
+  fs.forEach(f => {
+    const p = f.properties, [lon, lat] = f.geometry.coordinates;
+    const m = L.circleMarker([lat, lon], styleOf(p)).addTo(siteLayer);
+    m.bindTooltip(`<b>${esc(p.tj_code)}</b> ${esc(p.label || p.site_name)}<br>${TL('риск для детей','risk to children')}: ${esc(CLS(p.child_risk_class))} (№${p.child_risk_rank})<br>`
+      + (measured(p) ? `${TL('загрязнение','contamination')}: ${fmt(p.burden,1)} ${MG}` : `${TL('анализов нет — скрининг','no lab data; screening')}: ${esc(CLS(p.screen_class))}`));
+    m.on('click', () => openCard(p.map_id));
+    markers[p.map_id] = m;
+  });
+  let items = fs.slice();
+  if (LISTMODE === 'survey') items = items.filter(f => !measured(f.properties));
+  items.sort((a, b) => a.properties.child_risk_rank - b.properties.child_risk_rank);
+  const ul = document.getElementById('list'); ul.innerHTML = '';
+  items.forEach(f => {
+    const p = f.properties, li = document.createElement('li');
+    const c = colorOf(p), pr = !measured(p) && MODE !== 'screen';
+    li.innerHTML = `<span class="rk">${p.child_risk_rank}</span><span class="dot ${pr?'pred':''}" style="background:${c};border-color:${c}"></span>`
+      + `<span class="nm">${esc(p.label || p.site_name)}<small>${esc(p.tj_code)} · ${esc(p.region_label || p.region)} · ${TL('детей в 1 км','children within 1 km')}: ${fmt(p.children_1000m,0)}`
+      + (measured(p) ? ` · ${fmt(p.burden,1)} ${MG}` : ` · ${TL('прогноз','forecast')}: ${esc(CLS(p.screen_class))}`) + `</small></span>`;
+    li.onclick = () => { const m = markers[p.map_id]; map.setView(m.getLatLng(), Math.max(map.getZoom(), 12)); openCard(p.map_id); };
+    ul.appendChild(li);
+  });
+  document.getElementById('count').textContent = (LISTMODE === 'survey'
+    ? TL(`${items.length} участков без анализов, по убыванию риска для детей`, `${items.length} sites without lab data, by decreasing risk to children`) : TL(`${items.length} из ${SITES.length} участков`, `${items.length} of ${SITES.length} sites`));
+  drawLegend();
+}
+
+function kpis() {
+  const lab = SITES.filter(f => measured(f.properties));
+  const strong = lab.filter(f => f.properties.burden >= 100);
+  const kids = SITES.reduce((s, f) => s + (f.properties.children_1000m || 0), 0);
+  const kidsStrong = strong.reduce((s, f) => s + (f.properties.children_1000m || 0), 0);
+  const fl = strong.filter(f => f.properties.climate_flood_amplifier === 1).length;
+  document.getElementById('kpis').innerHTML = [
+    [SITES.length, TL('участков СОЗ на карте','POPs sites on the map')], [lab.length, TL('с анализами ДДТ/ГХЦГ','with DDT/HCH lab data')],
+    [strong.length, TL('загрязнено ≥100 мг/кг','contaminated ≥100 mg/kg')], [Math.round(kids/1000) + TL(' тыс.',' k'), TL('детей в 1 км от участков','children within 1 km of sites')],
+    [Math.round(kidsStrong/1000) + TL(' тыс.',' k'), TL('детей в 1 км от участков ≥100 мг/кг','children within 1 km of sites ≥100 mg/kg')], [fl, TL('участков ≥100 мг/кг у реки или в зоне паводка','sites ≥100 mg/kg near a river or in a flood zone')],
+  ].map(([v, t]) => `<div class="kpi"><b>${v}</b><span>${t}</span></div>`).join('');
+}
+
+fetch(BASE + '/pop/api/sites').then(r => r.json()).then(d => {
+  SITES = d.features;
+  const regs = [...new Map(SITES.map(f => [f.properties.region, f.properties.region_label || f.properties.region])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  document.getElementById('f-reg').innerHTML += regs.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+  kpis(); render();
+  map.fitBounds(L.geoJSON(d).getBounds(), {paddingTopLeft:[370, 20], paddingBottomRight:[20, 20]});
+});
+
+document.querySelectorAll('#modes button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#modes button').forEach(x => x.classList.remove('on')); b.classList.add('on'); MODE = b.dataset.m; render(); });
+document.querySelectorAll('#lists button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#lists button').forEach(x => x.classList.remove('on')); b.classList.add('on'); LISTMODE = b.dataset.l; render(); });
+['f-src','f-reg'].forEach(id => document.getElementById(id).onchange = render);
+document.getElementById('search').oninput = render;
+
+// пробы
+fetch(BASE + '/pop/api/samples').then(r => r.json()).then(d => {
+  d.features.forEach(f => {
+    const p = f.properties, [lon, lat] = f.geometry.coordinates;
+    let c = '#999';
+    if (p.burden !== null) for (const [t, cc] of HAZ) if (p.burden < t) { c = cc; break; }
+    L.circleMarker([lat, lon], {radius:3.5, color:'#333', weight:.6, fillColor:c, fillOpacity:.9})
+      .bindTooltip(`${TL('Проба','Sample')} ${esc(p.label)} (${esc(p.tj_code)})<br>${esc(p.source)}<br>${TL('ДДТ','DDT')}: ${fmt(p.DDT)} · ${TL('группа ДДТ','DDT group')}: ${fmt(p.DDT_group_sum)} · ${TL('ГХЦГ','HCH')}: ${fmt(p.HCH_sum)} ${MG}<br><small>${TL('координаты','coordinates')}: ${esc(p.coord_source)}</small>`)
+      .addTo(sampleLayer);
+  });
+});
+// индикатор загрузки тяжёлых слоёв
+const loadBox = L.control({position: 'topright'});
+loadBox.onAdd = () => { const d = L.DomUtil.create('div'); d.id = 'map-busy';
+  d.style.cssText = 'display:none;background:#fff;padding:4px 8px;border-radius:4px;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,.3)'; return d; };
+loadBox.addTo(map);
+let busyN = 0;
+function busy(k) { busyN = Math.max(0, busyN + k); const d = document.getElementById('map-busy');
+  d.textContent = TL('Загрузка слоя…', 'Loading layer…'); d.style.display = busyN ? '' : 'none'; }
+function mapNote(t) { const d = document.getElementById('map-busy'); d.textContent = t; d.style.display = '';
+  setTimeout(() => { if (!busyN) d.style.display = 'none'; }, 4000); }
+map.on('overlayadd', e => {
+  const wp = WP_LAYERS.get(e.layer);
+  if (wp && !e.layer.getLayers().length && !e.layer._loading) {
+    e.layer._loading = true; busy(+1);
+    fetch(BASE + '/api/wp_bounds/' + wp).then(r => r.ok ? r.json() : null).then(b => {
+      if (b) L.imageOverlay(BASE + '/' + b.url, [[b.south, b.west], [b.north, b.east]], {opacity:.75}).addTo(e.layer);
+      else mapNote(TL('Нет растров WorldPop 2025 для этого слоя', 'No WorldPop 2025 rasters for this layer'));
+    }).catch(() => mapNote(TL('Слой не загрузился', 'Layer failed to load'))).finally(() => { e.layer._loading = false; busy(-1); });
+  }
+  if (e.layer === hydroLayer && !hydroLayer.getLayers().length && !hydroLayer._loading) {
+    hydroLayer._loading = true; busy(+1);
+    fetch(BASE + '/api/hydrology').then(r => r.json()).then(d => L.geoJSON(d, {
+      renderer: L.canvas({padding: .3}),
+      style: f => f.properties.kind === 'water_body' ? {color:'#2980b9', weight:1, fillColor:'#3498db', fillOpacity:.5} : {color:'#2980b9', weight:1.2},
+      interactive:false}).addTo(hydroLayer))
+      .catch(() => mapNote(TL('Слой рек не загрузился', 'Rivers layer failed to load')))
+      .finally(() => { hydroLayer._loading = false; busy(-1); });
+  }
+});
+
+// ---------------- карточка участка ----------------
+const card = document.getElementById('card');
+function bar(v) { return `<div class="bar"><i style="width:${Math.round(100*(v||0))}%"></i></div>`; }
+async function openCard(id) {
+  card.style.display = 'block'; card.innerHTML = '<div class="bd">' + TL('Загрузка…','Loading…') + '</div>';
+  selLayer.clearLayers();
+  if (markers[id]) L.circleMarker(markers[id].getLatLng(), {radius: markers[id].getRadius() + 5, color:'#000', weight:3, fill:false, interactive:false}).addTo(selLayer);
+  const c = await (await fetch(`${BASE}/pop/api/site/${id}`)).json();
+  const r = c.risk || {}, s = c.screening || {};
+  let h = `<div class="hd"><button class="x" onclick="card.style.display='none';selLayer.clearLayers()">×</button><h2>${esc(c.site_name)}</h2>
+    <small>${esc(c.tj_code)} · ${esc(c.region)} · ${TL('обследование','surveyed')} ${esc(c.site_date)} · ${esc(c.status)}</small>${LANG === 'en' ? `<small style="display:block">${esc(c.site_name_ru)}</small>` : ''}</div><div class="bd">`;
+  h += `<h4>${TL('Риск для детей','Risk to children')}</h4><div><span class="badge" style="background:${COL[r.child_risk_class]}">${esc(CLS(r.child_risk_class))}</span>
+    &nbsp;${TL('место','rank')} ${r.child_risk_rank} ${TL('из','of')} ${SITES.length} · ${TL('индекс','index')} ${fmt(r.child_risk,2)}</div>
+    <div class="comp" style="margin-top:8px"><span>${TL('Опасность','Hazard')}</span>${bar(r.H)}<span class="n">${fmt(r.H)}</span>
+    <span>${TL('Дети рядом','Children nearby')}</span>${bar(r.E)}<span class="n">${fmt(r.E)}</span>
+    <span>${TL('Пути воздействия','Exposure pathways')}</span>${bar(r.V)}<span class="n">${fmt(r.V)}</span></div>
+    <div class="note">${TL('Детей (оценка)','Children (estimate)')}: ${fmt(r.children_500m,0)} ${TL('в 500 м','within 500 m')}, ${fmt(r.children_1000m,0)} ${TL('в 1 км','within 1 km')}; ${TL('людей на участке и в 100 м по анкете','people on the site and within 100 m (survey form)')}: ${fmt(r.people_on_site_100m,0)}<${r.children_u5_1000m!=null?`; ${TL('до 5 лет в 1 км','under 5 within 1 km')}: ${fmt(r.children_u5_1000m,0)}`:''}${r.poverty!=null?`; ${TL('бедность (RWI, 0–1)','poverty (RWI, 0–1)')}: ${fmt(r.poverty,2)}`:''}</div>`;
+  if (r.pathways_list) h += `<div class="note">${TL('Пути воздействия','Exposure pathways')}: ${esc(r.pathways_list)}</div>`;
+  if (r.climate_flood_amplifier === 1) h += `<div class="warn">${TL('Участок в зоне паводка или ближе 300 м к реке: паводок может разнести загрязнение.','The site is in a flood zone or within 300 m of a river: floods can spread the contamination.')}</div>`;
+  h += `<h4>${TL('Загрязнение','Contamination')}</h4>`;
+  if (r.hazard_source === 'анализы') {
+    h += TL(`<div>Максимум по пробам: <b class="${r.burden>=100?'over':''}">${fmt(r.burden,2)} мг/кг</b> — в ${fmt(r.burden/0.1,0)} раз выше норматива ДДТ 0,1 мг/кг</div>`,
+          `<div>Maximum over samples: <b class="${r.burden>=100?'over':''}">${fmt(r.burden,2)} mg/kg</b>, ${fmt(r.burden/0.1,0)} times the DDT standard of 0.1 mg/kg</div>`);
+  } else {
+    h += TL(`<div class="warn">Лабораторных анализов нет. Опасность оценена моделью скрининга: класс <b>${esc(s.screen_class)}</b>
+      (в этом классе сильно загрязнено ${Math.round(100*SUMMARY.share_positive_by_class[s.screen_class])}% обследованных участков).</div>`,
+      `<div class="warn">No laboratory data. The hazard is estimated by the screening model: class <b>${esc(CLS(s.screen_class))}</b>
+      (in this class ${Math.round(100*SUMMARY.share_positive_by_class[s.screen_class])}% of sampled sites are strongly contaminated).</div>`);
+  }
+  h += `<div class="note">${TL('Скрининг (модель, до анализа): класс','Screening (model, before analysis): class')} ${esc(CLS(s.screen_class))}, ${TL('оценка','score')} ${fmt(s.score_used,2)} — ${esc(s.score_type)}</div>`;
+  if (c.samples.length) {
+    const subs = [...new Set(c.samples.flatMap(x => Object.keys(x.values)))];
+    const main = TL(['ДДТ','ДДД','ДДЕ','γ-ГХЦГ (линдан)','β-ГХЦГ','α-ГХЦГ'], ['DDT','DDD','DDE','γ-HCH (lindane)','β-HCH','α-HCH']).filter(x => subs.includes(x));
+    const rest = subs.filter(x => !main.includes(x));
+    h += `<h4>${TL('Пробы','Samples')} (${c.samples.length}), ${MG}</h4><div style="overflow-x:auto"><table class="t"><tr><th>${TL('Проба','Sample')}</th><th>${TL('Год','Year')}</th>${main.map(x=>`<th class="n">${esc(x)}</th>`).join('')}</tr>`;
+    c.samples.forEach(x => {
+      h += `<tr title="${esc(x.source)}; ${TL('координаты','coordinates')}: ${esc(x.coord_source||TL('нет','none'))}"><td>${esc(x.label)}</td><td>${x.year ? Math.round(x.year) : ''}</td>`
+        + main.map(k => { const v = x.values[k]; return `<td class="n ${typeof v==='number'&&v>0.1?'over':''}">${v===undefined?'':(typeof v==='number'?fmt(v):esc(v))}</td>`; }).join('') + '</tr>';
+    });
+    h += `</table></div>`;
+    if (rest.length) h += `<div class="note">${TL('Также определялись','Also analysed')}: ${rest.map(esc).join(', ')}${TL(' — см. выгрузку проб.','; see the samples export.')}</div>`;
+    h += `<div class="note">${TL('Источники','Sources')}: ${[...new Set(c.samples.map(x => x.source))].map(esc).join('; ')}. ${TL('Красным — выше 0,1 мг/кг.','Red: above 0.1 mg/kg.')}</div>`;
+  }
+  if (c.facts.length) {
+    h += `<h4>${TL('Из описания участка','From the site description')}</h4>`;
+    const seen = new Set();
+    c.facts.forEach(f => { const k = f.field + f.value; if (seen.has(k)) return; seen.add(k);
+      const v = f.value === 'True' ? TL('да','yes') : (/^-?\d+(\.\d+)?$/.test(f.value) ? fmt(+f.value, 1) : f.value);
+      h += `<details><summary><b>${esc(f.field)}:</b> ${esc(v)}</summary><p>«…${esc(f.snippet)}…»</p></details>`; });
+    h += `<div class="note">${TL('Извлечено из текста карточки по шаблонам; раскройте строку, чтобы увидеть фрагмент-основание.','Extracted from the card text by patterns; expand a row to see the source fragment (original Russian text).')}</div>`;
+  }
+  const fm = c.form, lab = TL({square:'Площадь', smell:'Запах', pit_dug:'Яма', access:'Доступ', soil_cover:'Покрытие почвы',
+    agriculture_near:'Посевы', animals_food:'Животные', water:'Водный объект', river_distance:'До реки', flood_zone:'Зона паводка',
+    groundwater_depth:'Грунтовые воды', groundwaters_using:'Использование подземных вод', surface_water_usage:'Использование поверхностных вод',
+    well_distance:'Колодец', lived_on_site:'Живут на участке', lived_50m:'Живут в 50 м', lived_100m:'Живут в 100 м', lived_500m:'Живут в 500 м'},
+    {square:'Area', smell:'Odour', pit_dug:'Pit', access:'Access', soil_cover:'Soil cover',
+    agriculture_near:'Crops', animals_food:'Animals', water:'Water body', river_distance:'To river', flood_zone:'Flood zone',
+    groundwater_depth:'Groundwater', groundwaters_using:'Groundwater use', surface_water_usage:'Surface water use',
+    well_distance:'Well', lived_on_site:'Living on the site', lived_50m:'Living within 50 m', lived_100m:'Living within 100 m', lived_500m:'Living within 500 m'});
+  h += `<h4>${TL('Анкета обследования','Survey form')}</h4><table class="t">` + Object.entries(lab).filter(([k]) => fm[k] !== null && fm[k] !== '')
+    .map(([k, l]) => `<tr><th style="width:42%">${l}</th><td>${esc(fm[k])}</td></tr>`).join('') + `</table>`;
+  if (c.problem_description || c.site_description) h += `<details><summary>${TL('Полный текст карточки','Full card text (Russian original)')}</summary><p>${esc(c.problem_description)}</p><p>${esc(c.site_description)}</p><p>${esc(c.impact||'')}</p></details>`;
+  h += `<h4>${TL('Документы и фото на chemicals.tj','Documents and photos on chemicals.tj')}</h4>`;
+  if (c.docs.length) h += c.docs.map(d => `<div>📄 <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a></div>`).join('');
+  if (c.photos.length) h += `<div>${c.photos.map((u,i) => `<a href="${esc(u)}" target="_blank" rel="noopener">${TL('фото','photo')} ${i+1}</a>`).join(' · ')}</div>`;
+  h += `<div class="note">${TL('Ссылки ведут на внешний сайт chemicals.tj и не открываются в изолированной сети.','Document names are given as in the original (Russian). Links lead to the external site chemicals.tj and do not open in an isolated network.')} <a href="${esc(c.card_url)}" target="_blank" rel="noopener">${TL('Исходная карточка (JSON)','Original card (JSON)')}</a></div></div>`;
+  card.innerHTML = h;
+}
+
+// ---------------- новый участок ----------------
+let pickMode = false, OPTS = null;
+const nb = document.getElementById('newbtn');
+nb.onclick = async () => {
+  pickMode = !pickMode; nb.classList.toggle('on', pickMode);
+  nb.textContent = pickMode ? TL('Кликните на карте… (отмена)','Click on the map… (cancel)') : TL('+ Оценить новый участок','+ Assess a new site');
+  map.getContainer().style.cursor = pickMode ? 'crosshair' : '';
+  if (!OPTS) OPTS = await (await fetch(BASE + '/pop/api/form_options')).json();
+};
+map.on('click', e => {
+  if (!pickMode) return;
+  pickMode = false; nb.classList.remove('on'); nb.textContent = TL('+ Оценить новый участок','+ Assess a new site'); map.getContainer().style.cursor = '';
+  newLayer.clearLayers();
+  L.marker(e.latlng).addTo(newLayer);
+  openForm(e.latlng.lat, e.latlng.lng);
+});
+const FORM = TL([['square','Площадь'],['smell','Запах пестицидов'],['pit_dug','Выкопана яма / следы захоронения'],['access','Доступ'],
+  ['soil_cover','Покрытие почвы'],['agriculture_near','Посевы'],['animals_food','Животные'],['water','Водный объект рядом'],
+  ['river_distance','Расстояние до реки'],['flood_zone','Зона паводка'],['groundwater_depth','Глубина грунтовых вод'],
+  ['groundwaters_using','Использование подземных вод'],['surface_water_usage','Использование поверхностных вод'],['well_distance','Колодец'],
+  ['chemical_storage','Хранились химикаты'],['land','Землепользование'],['status','Статус объекта']],
+  [['square','Area'],['smell','Pesticide odour'],['pit_dug','Pit dug / signs of burial'],['access','Access'],
+  ['soil_cover','Soil cover'],['agriculture_near','Crops'],['animals_food','Animals'],['water','Water body nearby'],
+  ['river_distance','Distance to river'],['flood_zone','Flood zone'],['groundwater_depth','Groundwater depth'],
+  ['groundwaters_using','Groundwater use'],['surface_water_usage','Surface water use'],['well_distance','Well'],
+  ['chemical_storage','Chemicals were stored'],['land','Land use'],['status','Site status']]);
+function openForm(lat, lon) {
+  card.style.display = 'block';
+  let h = `<div class="hd"><button class="x" onclick="card.style.display='none'">×</button><h2>${TL('Новый участок: оценка до анализа','New site: assessment before analysis')}</h2>
+    <small>${lat.toFixed(5)}, ${lon.toFixed(5)}</small></div><div class="bd"><form id="form">
+    <div class="note">${TL('Заполните то, что известно по осмотру (как в анкете chemicals.tj). Пустые поля допустимы — модель учтёт их как «нет данных». Ковариаты (pH, рельеф, население, сток, климат) и данные соседних участков подставляются автоматически.','Fill in what is known from the site visit (as in the chemicals.tj survey form). Empty fields are allowed: the model treats them as “no data”. Covariates (pH, terrain, population, flow, climate) and data from neighbouring sites are added automatically.')}</div>`;
+  FORM.forEach(([k, l]) => { h += `<label>${l}</label><select name="${k}"><option value="">${TL('— нет данных —','— no data —')}</option>`
+    + (OPTS[k]||[]).map(o => Array.isArray(o) ? `<option value="${esc(o[0])}">${esc(o[1])}</option>` : `<option>${esc(o)}</option>`).join('') + `</select>`; });
+  h += `<label>${TL('Сколько человек живёт','How many people live')}</label><div class="two"><input type="number" min="0" name="lived_on_site" placeholder="${TL('на участке','on the site')}">
+    <input type="number" min="0" name="lived_100m" placeholder="${TL('в 100 м','within 100 m')}"></div>
+    <label><input type="checkbox" name="school_near" value="1" style="width:auto"> ${TL('рядом школа, детсад или дети на участке','school or kindergarten nearby, or children on the site')}</label>
+    <label><input type="checkbox" name="drinking_water" value="1" style="width:auto"> ${TL('вода рядом используется для питья','nearby water is used for drinking')}</label>
+    <input type="hidden" name="lat" value="${lat}"><input type="hidden" name="lon" value="${lon}">
+    <button type="submit">${TL('Оценить','Assess')}</button></form><div id="res"></div></div>`;
+  card.innerHTML = h;
+  document.getElementById('form').onsubmit = async ev => {
+    ev.preventDefault();
+    const fd = Object.fromEntries(new FormData(ev.target).entries());
+    const rr = await fetch(BASE + '/pop/api/predict', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(fd)});
+    const j = await rr.json(), out = document.getElementById('res');
+    if (j.error) { out.innerHTML = `<div class="warn">${esc(j.error)}</div>`; return; }
+    out.innerHTML = `<div class="res"><div>${TL('Скрининг загрязнения','Contamination screening')}: <span class="badge" style="background:${COL[j.screen_class]}">${esc(CLS(j.screen_class))}</span></div>
+      <div class="note">${TL(`В этом классе сильно загрязнены (≥100 мг/кг) ${Math.round(100*j.share_strong_in_class)}% обследованных участков. Оценка ${fmt(j.screen_score)} (ранг среди обследованных).`, `In this class ${Math.round(100*j.share_strong_in_class)}% of sampled sites are strongly contaminated (≥100 mg/kg). Score ${fmt(j.screen_score)} (rank among sampled sites).`)}</div>
+      <div style="margin-top:8px">${TL('Риск для детей','Risk to children')}: <span class="badge" style="background:${COL[j.child_risk_class]}">${esc(CLS(j.child_risk_class))}</span> ${TL('индекс','index')} ${fmt(j.child_risk)}</div>
+      <div class="comp" style="margin-top:6px"><span>${TL('Опасность','Hazard')}</span>${bar(j.H)}<span class="n">${fmt(j.H)}</span>
+      <span>${TL('Дети рядом','Children nearby')}</span>${bar(j.E)}<span class="n">${fmt(j.E)}</span><span>${TL('Пути воздействия','Exposure pathways')}</span>${bar(j.V)}<span class="n">${fmt(j.V)}</span></div>
+      <div class="note">${TL('Детей (оценка WorldPop)','Children (WorldPop estimate)')}: ${fmt(j.children_500m,0)} ${TL('в 500 м','within 500 m')}, ${fmt(j.children_1000m,0)} ${TL('в 1 км','within 1 km')}.
+      ${j.pathways.length ? TL('Пути: ','Pathways: ') + j.pathways.map(esc).join('; ') + '.' : ''}</div>
+      <div class="note">${TL('Соседние обследованные участки: среднее','Neighbouring sampled sites: mean')} ${fmt(j.neighbours.mean_burden_mgkg,1)} ${MG}, ${TL('максимум','maximum')} ${fmt(j.neighbours.max_burden_mgkg,1)} ${MG}, ${TL('ближайший в','nearest at')} ${fmt(j.neighbours.nearest_km,1)} ${TL('км','km')}.
+      ${TL('Ближайший участок карты','Nearest mapped site')}: ${esc(j.nearest_site.tj_code)} (${fmt(j.nearest_site.dist_km,1)} ${TL('км','km')}). ${TL('Область','Region')}: ${esc(j.region_used)}.</div>
+      <div class="note">pH ${fmt(j.covariates.ph,1)} · ${TL('высота','elevation')} ${fmt(j.covariates.elev_m,0)} ${TL('м','m')} · ${TL('осадки','precipitation')} ${fmt(j.covariates.bio12_precip_mm,0)} ${TL('мм/год','mm/yr')}</div>
+      <div class="warn">${TL('Это оценка для очерёдности обследования, а не замена лабораторного анализа.','This estimate sets the order of surveys; it does not replace laboratory analysis.')}</div></div>`;
+  };
+}
+</script>
+</body>
+</html>

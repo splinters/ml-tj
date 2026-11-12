@@ -1,0 +1,11 @@
+{
+ "n_shared_sites": 9,
+ "n_sites_with_pop_burden": 9,
+ "site_level_spearman": {
+  "n": 9,
+  "rho": -0.3,
+  "p": 0.433
+ },
+ "point_pairs": 0,
+ "point_level_spearman": {}
+}

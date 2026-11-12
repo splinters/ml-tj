@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Site context — ML TJ demo{% endblock %}
+{% block head %}
+<style>
+  td.c { min-width: 120px; font-size: 12.5px; }
+  td.c .v { font-weight: 600; }
+  td.c .src { display:block; font-size: 11px; margin-top: 1px; }
+  .empty { color:#bbb; }
+  code.cmd { display:block; background:#f4f4f4; padding:8px 12px; border-radius:4px; font-size:12.5px; overflow-x:auto; margin:6px 0; }
+  .legend-row { display:flex; flex-wrap:wrap; gap:14px; margin:8px 0 12px; font-size:12.5px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+</style>
+{% endblock %}
+{% block body %}
+<h1>Land-use context</h1>
+<p class="lead">What is located near the warehouses and how the land will be used after remediation. Each value carries its source and verification level.</p>
+
+{% if missing %}
+<div class="caveat">The context tables have not been created in the database yet. Run <code>python db/load_site_context.py</code> and reload the page.</div>
+{% else %}
+
+<div class="info">
+  <b>Data status.</b> The client has stated that after remediation the land will be returned to its current owners (if privatized) or transferred to the Ministry of Agriculture or the Land Committee; current use and data for the 100–500 m radius are expected later. Values with the status "estimate from imagery" are unconfirmed and do not change the standard type.
+</div>
+
+<div class="legend-row">
+  {% for k, (label, color) in verification.items() %}<span><span class="dot" style="background:{{ color }}"></span>{{ label }}</span>{% endfor %}
+</div>
+
+<div class="scroll">
+<table class="data">
+  <thead><tr>
+    <th>Warehouse</th>
+    {% for a in attrs %}<th>{{ a.label_ru|vl }}{% if a.unit %}, {{ a.unit|vl }}{% endif %}</th>{% endfor %}
+    {% if has_lu %}<th>Land use for the standard</th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><b>{{ r.name }}</b></td>
+      {% for c in r.cells %}
+        {% if c %}
+          <td class="c" title="{{ c.source }}{% if c.source_ref %} / {{ c.source_ref }}{% endif %}, {{ c.as_of }}{% if c.note %}. {{ c.note }}{% endif %}">
+            <span class="v">{{ c.val|vl }}</span>
+            <span class="src" style="color:{{ verification[c.verification][1] }}">{{ verification[c.verification][0] }}</span>
+          </td>
+        {% else %}<td class="c empty">no data</td>{% endif %}
+      {% endfor %}
+      {% if has_lu %}<td class="c">{% if r.land_use %}<span class="v">{{ land_use_ru.get(r.land_use.land_use, r.land_use.land_use) }}</span>
+        <span class="src mute">{{ 'confirmed by the client' if r.land_use.land_use_origin == 'site_context' else 'default, from the standards profile' }}</span>{% endif %}</td>{% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="note">{{ n_vals }} current values. Hover over a cell to see its source and date. The full value history is in the <a href="{{ request.script_root }}/export/site_context_csv">CSV</a>.</p>
+
+<h2>How it is used</h2>
+<ul>
+  <li><b>Standards.</b> If the client has confirmed the intended land use of a warehouse (document or statement), measurements are compared with the standards for that land use; for the other warehouses the land use of the active profile applies (<a href="{{ request.script_root }}/norms">Standards</a>).</li>
+  <li><b>The concentration model does not change.</b> Context describes who is exposed, not how much contaminant is in the soil; values are known only per warehouse (10 sites), so their contribution cannot be validated with LOWO cross-validation.</li>
+</ul>
+
+<h2>How to fill in and update</h2>
+<ol>
+  <li>The client receives the Excel template <code>addfiles/site_context_request.xlsx</code> ("Context" sheet).</li>
+  <li>Dry-run check: <code class="cmd">python db/load_site_context.py FILE.xlsx --verification customer_doc --source "Client letter 2026-11-02" --dry-run</code></li>
+  <li>Load: the same command without <code>--dry-run</code>. Errors (unknown warehouse, value outside the list) are reported before writing.</li>
+  <li>Changing a value: load the new value with a new date or source. The old one stays in the history; the more reliable and more recent value becomes current.</li>
+  <li>New attribute: a row in <code>db/context_attributes.csv</code> and a rerun, with no schema changes.</li>
+  <li>Console view: <code>python db/load_site_context.py --list</code>.</li>
+</ol>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+# Необязательно: интерактивный JupyterLab для разработчиков (pip install jupyterlab). Только localhost!
+# Доступ - через SSH-туннель: ssh -L 8888:127.0.0.1:8888 user@host
+# Наружу (nginx, открытый порт) не публиковать: JupyterLab выполняет произвольный код.
+[Unit]
+Description=JupyterLab ML TJ (localhost only)
+After=network.target
+
+[Service]
+User=mltj
+WorkingDirectory=/opt/ml_tj/local_demo_stand/notebooks
+Environment=ML_TJ_GPKG=/opt/ml_tj/local_demo_stand/notebooks/data/tajikistan_soil_ml_export.gpkg
+ExecStart=/opt/ml_tj/local_demo_stand/.venv-nb/bin/jupyter lab --ip=127.0.0.1 --port=8888 --no-browser
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

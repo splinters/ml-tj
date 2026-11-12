@@ -1,0 +1,7 @@
+/* Только верхнее меню - для страниц со своей вёрсткой (главная карта) */
+:root { --accent:#2c3e50; }
+.topnav { display:flex; flex-wrap:wrap; gap:2px; background: var(--accent); padding: 0 12px; position: sticky; top:0; z-index: 2000; flex: none;
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.topnav a { color:#dfe6ec; text-decoration:none; padding: 11px 13px; font-size: 14px; line-height: 1.5; }
+.topnav a:hover { background: rgba(255,255,255,.12); }
+.topnav a.active { background:#fff; color: var(--accent); font-weight:600; }

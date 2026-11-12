@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Контекст — демо ML TJ{% endblock %}
+{% block head %}
+<style>
+  td.c { min-width: 120px; font-size: 12.5px; }
+  td.c .v { font-weight: 600; }
+  td.c .src { display:block; font-size: 11px; margin-top: 1px; }
+  .empty { color:#bbb; }
+  code.cmd { display:block; background:#f4f4f4; padding:8px 12px; border-radius:4px; font-size:12.5px; overflow-x:auto; margin:6px 0; }
+  .legend-row { display:flex; flex-wrap:wrap; gap:14px; margin:8px 0 12px; font-size:12.5px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+</style>
+{% endblock %}
+{% block body %}
+<h1>Контекст использования территорий</h1>
+<p class="lead">Что находится рядом со складами и как будет использоваться земля после рекультивации. Для каждого значения указан источник и степень проверки.</p>
+
+{% if missing %}
+<div class="caveat">Таблицы контекста ещё не созданы в БД. Выполните <code>python db/load_site_context.py</code> и обновите страницу.</div>
+{% else %}
+
+<div class="info">
+  <b>Статус данных.</b> Заказчик сообщил, что после рекультивации земли будут возвращены нынешним владельцам (если приватизированы) либо переданы Министерству сельского хозяйства или Комитету по земледелию; текущее использование и данные по радиусу 100–500 м обещаны позже. Значения со статусом «оценка по снимкам» не подтверждены и тип норматива не меняют.
+</div>
+
+<div class="legend-row">
+  {% for k, (label, color) in verification.items() %}<span><span class="dot" style="background:{{ color }}"></span>{{ label }}</span>{% endfor %}
+</div>
+
+<div class="scroll">
+<table class="data">
+  <thead><tr>
+    <th>Склад</th>
+    {% for a in attrs %}<th>{{ a.label_ru }}{% if a.unit %}, {{ a.unit }}{% endif %}</th>{% endfor %}
+    {% if has_lu %}<th>Землепользование для норматива</th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><b>{{ r.name }}</b></td>
+      {% for c in r.cells %}
+        {% if c %}
+          <td class="c" title="{{ c.source }}{% if c.source_ref %} / {{ c.source_ref }}{% endif %}, {{ c.as_of }}{% if c.note %}. {{ c.note }}{% endif %}">
+            <span class="v">{{ c.val }}</span>
+            <span class="src" style="color:{{ verification[c.verification][1] }}">{{ verification[c.verification][0] }}</span>
+          </td>
+        {% else %}<td class="c empty">нет данных</td>{% endif %}
+      {% endfor %}
+      {% if has_lu %}<td class="c">{% if r.land_use %}<span class="v">{{ land_use_ru.get(r.land_use.land_use, r.land_use.land_use) }}</span>
+        <span class="src mute">{{ 'подтверждено заказчиком' if r.land_use.land_use_origin == 'site_context' else 'по умолчанию, из профиля нормативов' }}</span>{% endif %}</td>{% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="note">{{ n_vals }} действующих значений. Подсказка с источником и датой показывается при наведении на ячейку. Полная история значений — в <a href="{{ request.script_root }}/export/site_context_csv">CSV</a>.</p>
+
+<h2>Как это используется</h2>
+<ul>
+  <li><b>Нормативы.</b> Если заказчик подтвердил целевое землепользование склада (документ или сообщение), сравнение замеров со справочником нормативов идёт по нему; для остальных складов действует тип землепользования активного профиля (<a href="{{ request.script_root }}/norms">Нормативы</a>).</li>
+  <li><b>Модель концентраций не меняется.</b> Контекст описывает, кто подвергается воздействию, а не сколько загрязнителя в почве; значения известны только по складам (10 площадок), и проверить их вклад кросс-валидацией LOWO нельзя.</li>
+</ul>
+
+<h2>Как заполнять и менять</h2>
+<ol>
+  <li>Заказчику отправляется Excel-шаблон <code>addfiles/site_context_request.xlsx</code> (лист «Контекст»).</li>
+  <li>Проверка без записи: <code class="cmd">python db/load_site_context.py ФАЙЛ.xlsx --verification customer_doc --source "Письмо заказчика 2026-11-02" --dry-run</code></li>
+  <li>Загрузка: та же команда без <code>--dry-run</code>. Ошибки (неизвестный склад, значение вне списка) выводятся до записи.</li>
+  <li>Изменение значения: загрузить новое значение с новой датой или источником. Старое остаётся в истории, действующим становится более надёжное и более новое.</li>
+  <li>Новый признак: строка в <code>db/context_attributes.csv</code> и повторный запуск, без правок схемы.</li>
+  <li>Просмотр в консоли: <code>python db/load_site_context.py --list</code>.</li>
+</ol>
+{% endif %}
+{% endblock %}

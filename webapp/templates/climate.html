@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Климат и население — демо ML TJ</title>
+<link rel="stylesheet" href="{{ request.script_root }}/static/vendor/leaflet/leaflet.css"/>
+<link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}">
+<style>
+  html, body { height: 100%; }
+  body.page { display: flex; flex-direction: column; }
+  #stage { flex: 1; min-height: 0; display: flex; isolation: isolate; }
+  #side { width: 340px; flex: none; overflow-y: auto; border-right: 1px solid var(--line); padding: 12px 14px 18px; font-size: 13px; background: #fff; }
+  #map { flex: 1; min-width: 0; background: #e9edf0; }
+  #side h1 { font-size: 17px; margin: 0 0 2px; }
+  #side .note { margin: 0 0 10px; }
+  .grp { margin: 12px 0 0; }
+  .grp > label.h { display: block; font-weight: 600; margin-bottom: 4px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .seg button { border: 1px solid #c4cbd1; background: #fff; border-radius: 4px; padding: 5px 9px; font-size: 12.5px; cursor: pointer; color: #222; }
+  .seg button:hover { background: #f0f3f5; }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .seg button:disabled { opacity: .4; cursor: not-allowed; }
+  select, input[type=range] { width: 100%; }
+  select { padding: 5px; font-size: 13px; }
+  #legend img { max-width: 100%; display: block; }
+  #legend-box { border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; background: #fafbfc; }
+  #legend-title { font-weight: 600; margin-bottom: 6px; }
+  #abstract { margin-top: 8px; color: var(--muted); font-size: 12px; }
+  #status { margin: 8px 0 0; }
+  .warn { background: #fff5f2; border-left: 3px solid #c0392b; padding: 6px 10px; font-size: 12.5px; }
+  .chk { display: block; margin: 4px 0; }
+  .layername { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--muted); word-break: break-all; }
+  @media (max-width: 800px) {
+    #stage { flex-direction: column; }
+    #side { width: auto; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--line); }
+    #map { min-height: 300px; }
+  }
+</style>
+</head>
+<body class="page">
+{% include "_nav.html" %}
+<div id="stage">
+  <aside id="side">
+    <h1>Климат и население</h1>
+    <p class="note">Климат WorldClim 2.1 (около 1 км) и население WorldPop 2025 (около 100 м). Слои публикуются в GeoServer (workspace <b>{{ workspace }}</b>).</p>
+    <div id="status"></div>
+
+    <div class="grp"><label class="h">Набор данных</label>
+      <div class="seg" id="f-scen"></div></div>
+    <div class="grp" id="g-period"><label class="h">Период прогноза</label>
+      <div class="seg" id="f-period"></div></div>
+    <div class="grp" id="g-theme"><label class="h">Тема</label>
+      <div class="seg" id="f-theme"></div></div>
+    <div class="grp"><label class="h" for="f-var">Показатель <span id="var-count" class="note"></span></label>
+      <select id="f-var"></select></div>
+
+    <div class="grp"><label class="h" for="opacity">Прозрачность слоя: <span id="op-val">75</span>%</label>
+      <input type="range" id="opacity" min="10" max="100" value="75"></div>
+    <div class="grp">
+      <label class="chk"><input type="checkbox" id="c-sites" checked> Склады проекта</label>
+      <label class="chk"><input type="checkbox" id="c-pop" checked> Участки СОЗ (цвет — риск для детей)</label>
+      {% if basemap != 'none' %}<label class="chk"><input type="checkbox" id="c-osm" checked> Подложка OpenStreetMap <span class="note">(внешний сервис)</span></label>{% endif %}
+    </div>
+
+    <div class="grp"><label class="h">Легенда</label>
+      <div id="legend-box"><div id="legend-title"></div><div id="legend"></div></div>
+      <div id="abstract"></div>
+      <div class="layername" id="layername"></div>
+    </div>
+    <p class="note" style="margin-top:12px">Клик по карте показывает значение слоя в точке. Данные WorldClim: Fick, Hijmans, 2017; условия использования: worldclim.org. Данные WorldPop: worldpop.org, лицензия CC BY 4.0.</p>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<script src="{{ request.script_root }}/static/vendor/leaflet/leaflet.js"></script>
+<script>
+const BASE = {{ request.script_root|tojson }};
+const WS = {{ workspace|tojson }};
+const USE_OSM = {{ (basemap != 'none')|tojson }};
+const SCEN_LABEL = {hist: 'Норма 1970–2000', ssp245: 'Прогноз SSP2-4.5', ssp585: 'Прогноз SSP5-8.5', pop: 'Население 2025'};
+const NOPER = new Set(['hist', 'pop']);
+const THEMES = [['all', 'Все'], ['temp', 'Температура'], ['precip', 'Осадки']];
+
+let layers = [], state = {scen: 'hist', period: null, theme: 'all', var: 'bio1'};
+let wmsLayer = null, sitesLayer = null, popSitesLayer = null, clickedSite = null;
+
+const map = L.map('map', {zoomControl: true}).setView([38.6, 71.2], 7);
+let osm = null;
+if (USE_OSM) {
+  osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {attribution: '&copy; OpenStreetMap contributors', maxZoom: 18}).addTo(map);
+  document.getElementById('c-osm').onchange = e => e.target.checked ? osm.addTo(map).bringToBack() : map.removeLayer(osm);
+}
+
+function el(tag, props, text) { const e = document.createElement(tag); Object.assign(e, props || {}); if (text) e.textContent = text; return e; }
+
+function periods() {
+  return [...new Set(layers.filter(l => l.scenario === state.scen).map(l => l.period))].sort();
+}
+function candidates() {
+  return layers.filter(l => l.scenario === state.scen && (NOPER.has(l.scenario) || l.period === state.period)
+    && (state.scen === 'pop' || state.theme === 'all' || l.theme === state.theme));
+}
+function current() {
+  return layers.find(l => l.scenario === state.scen && l.var === state.var
+    && (NOPER.has(l.scenario) || l.period === state.period));
+}
+
+function seg(id, items, active, onclick) {
+  const box = document.getElementById(id); box.innerHTML = '';
+  items.forEach(([key, label]) => {
+    const b = el('button', {type: 'button'}, label);
+    if (key === active) b.classList.add('on');
+    b.onclick = () => onclick(key); box.appendChild(b);
+  });
+}
+
+function renderFilters() {
+  seg('f-scen', Object.keys(SCEN_LABEL).map(k => [k, SCEN_LABEL[k]]), state.scen, k => {
+    state.scen = k; if (!NOPER.has(k) && !state.period) state.period = periods()[0];
+    if (!NOPER.has(k) && !periods().includes(state.period)) state.period = periods()[0];
+    renderAll();
+  });
+  document.getElementById('g-period').style.display = NOPER.has(state.scen) ? 'none' : '';
+  document.getElementById('g-theme').style.display = state.scen === 'pop' ? 'none' : '';
+  if (!NOPER.has(state.scen)) {
+    if (!periods().includes(state.period)) state.period = periods()[0];
+    seg('f-period', periods().map(p => [p, p]), state.period, p => { state.period = p; renderAll(); });
+  }
+  seg('f-theme', THEMES, state.theme, t => { state.theme = t; renderAll(); });
+
+  const sel = document.getElementById('f-var'); sel.innerHTML = '';
+  const cand = candidates();
+  const groups = [['bio', 'Биоклиматические показатели'], ['tavg', 'Температура по месяцам'], ['prec', 'Осадки по месяцам'], ['pop', 'Население, WorldPop R2025A']];
+  groups.forEach(([g, label]) => {
+    const items = cand.filter(l => l.group === g);
+    if (!items.length) return;
+    const og = el('optgroup', {label});
+    items.forEach(l => og.appendChild(el('option', {value: l.var, disabled: !l.published}, l.short + (l.group === 'bio' ? ` (BIO${l.var.slice(3)})` : '') + (l.published ? '' : ' — не опубликован'))));
+    sel.appendChild(og);
+  });
+  if (![...sel.options].some(o => o.value === state.var)) state.var = sel.options.length ? sel.options[0].value : state.var;
+  sel.value = state.var;
+  document.getElementById('var-count').textContent = `(${cand.length})`;
+}
+
+function updateLayer() {
+  const rec = current();
+  if (wmsLayer) { map.removeLayer(wmsLayer); wmsLayer = null; }
+  const title = document.getElementById('legend-title'), lg = document.getElementById('legend');
+  if (!rec) { title.textContent = 'Нет слоя для выбранных фильтров'; lg.innerHTML = ''; return; }
+  document.getElementById('layername').textContent = `${WS}:${rec.name}`;
+  document.getElementById('abstract').textContent = rec.abstract;
+  title.textContent = `${rec.var_title}, ${rec.unit}`;
+  if (!rec.published) { lg.textContent = 'Слой не опубликован в GeoServer.'; return; }
+  wmsLayer = L.tileLayer.wms(`${BASE}/climate/wms`, {
+    layers: `${WS}:${rec.name}`, format: 'image/png', transparent: true, version: '1.1.1',
+    opacity: +document.getElementById('opacity').value / 100, attribution: rec.source || 'WorldClim 2.1'
+  }).addTo(map);
+  const q = new URLSearchParams({service: 'WMS', request: 'GetLegendGraphic', version: '1.1.0', format: 'image/png',
+    layer: `${WS}:${rec.name}`, legend_options: 'fontAntiAliasing:true;forceLabels:on'});
+  lg.innerHTML = '';
+  const img = el('img', {alt: 'Легенда', src: `${BASE}/climate/wms?${q}`});
+  img.onerror = () => { lg.textContent = 'Легенда недоступна (GeoServer не ответил).'; };
+  lg.appendChild(img);
+}
+
+function renderAll() { renderFilters(); updateLayer(); }
+
+document.getElementById('f-var').onchange = e => { state.var = e.target.value; updateLayer(); };
+document.getElementById('opacity').oninput = e => {
+  document.getElementById('op-val').textContent = e.target.value;
+  if (wmsLayer) wmsLayer.setOpacity(e.target.value / 100);
+};
+
+// значение слоя в точке (WMS GetFeatureInfo)
+map.on('click', async ev => {
+  const rec = current(); if (!rec || !rec.published) { clickedSite = null; return; }
+  const b = map.getBounds(), sz = map.getSize();
+  const sw = L.CRS.EPSG3857.project(b.getSouthWest()), ne = L.CRS.EPSG3857.project(b.getNorthEast());
+  const p = map.latLngToContainerPoint(ev.latlng);
+  const q = new URLSearchParams({service: 'WMS', version: '1.1.1', request: 'GetFeatureInfo',
+    layers: `${WS}:${rec.name}`, query_layers: `${WS}:${rec.name}`, styles: '', srs: 'EPSG:3857',
+    bbox: [sw.x, sw.y, ne.x, ne.y].join(','), width: sz.x, height: sz.y, x: Math.round(p.x), y: Math.round(p.y),
+    info_format: 'application/json', feature_count: 1});
+  let txt = 'нет данных';
+  try {
+    const j = await (await fetch(`${BASE}/climate/wms?${q}`)).json();
+    const props = j.features && j.features[0] && j.features[0].properties;
+    const v = props && Object.values(props).find(x => typeof x === 'number');
+    if (v !== undefined && isFinite(v)) txt = `${(+v).toFixed(rec.group === 'pop' ? 2 : 1)} ${rec.unit}`;
+  } catch (e) { txt = 'не удалось получить'; }
+  const site = clickedSite; clickedSite = null;
+  L.popup().setLatLng(ev.latlng)
+    .setContent(`${site ? site + '<br>' : ''}<b>${rec.short}</b><br>${txt}<br><span style="color:#666">${ev.latlng.lat.toFixed(3)}, ${ev.latlng.lng.toFixed(3)}</span>`)
+    .openOn(map);
+});
+
+document.getElementById('c-sites').onchange = e => {
+  if (!sitesLayer) return;
+  e.target.checked ? sitesLayer.addTo(map) : map.removeLayer(sitesLayer);
+};
+fetch(`${BASE}/api/sites`).then(r => r.json()).then(g => {
+  sitesLayer = L.geoJSON(g, {
+    style: {color: '#111', weight: 2, fillOpacity: 0},
+    pointToLayer: (f, ll) => L.circleMarker(ll, {radius: 5, color: '#111', fillColor: '#fff', fillOpacity: 1}),
+    onEachFeature: (f, l) => l.bindTooltip(f.properties.label || f.properties.name || f.properties.site_id)
+  });
+  if (document.getElementById('c-sites').checked) sitesLayer.addTo(map);
+}).catch(() => {});
+
+// участки СОЗ: кружок с цветом класса риска для детей; клик по участку показывает значение растра в этой точке
+const POP_COL = {'низкий':'#2e7d32','средний':'#f9a825','высокий':'#ef6c00','очень высокий':'#b71c1c'};
+const POP_CLS = {'низкий':'низкий','средний':'средний','высокий':'высокий','очень высокий':'очень высокий'};
+const escH = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+document.getElementById('c-pop').onchange = e => {
+  if (!popSitesLayer) return;
+  e.target.checked ? popSitesLayer.addTo(map) : map.removeLayer(popSitesLayer);
+};
+fetch(`${BASE}/pop/api/sites`).then(r => r.json()).then(g => {
+  popSitesLayer = L.geoJSON(g, {
+    pointToLayer: (f, ll) => L.circleMarker(ll, {radius: 5, weight: 1, color: '#333',
+      fillColor: POP_COL[f.properties.child_risk_class] || '#999', fillOpacity: .9}),
+    onEachFeature: (f, l) => {
+      const p = f.properties;
+      const head = `<b>${escH(p.tj_code)}</b> ${escH(p.label || p.site_name)}`;
+      const burden = p.burden != null ? `${(+p.burden).toFixed(1).replace('.', ',')} мг/кг` : 'нет анализов';
+      l.bindTooltip(`${head}<br>риск для детей: ${escH(POP_CLS[p.child_risk_class] || p.child_risk_class)}<br>`
+        + `загрязнение: ${burden}<br>детей в 1 км: ${p.children_1000m != null ? Math.round(p.children_1000m) : '—'}`);
+      l.on('click', () => { clickedSite = head; });   // дальше клик доходит до карты и запрашивает значение растра
+    }
+  });
+  if (document.getElementById('c-pop').checked) popSitesLayer.addTo(map);
+}).catch(() => {});
+
+fetch(`${BASE}/api/climate/catalog`).then(r => r.json()).then(c => {
+  layers = c.layers;
+  const st = document.getElementById('status');
+  if (!c.geoserver_ok) {
+    st.innerHTML = '<div class="warn">GeoServer не отвечает (' + (c.geoserver_error || '') + '). Проверьте GEOSERVER_URL и что слои опубликованы.</div>';
+  } else if (c.published < layers.length) {
+    st.innerHTML = `<div class="warn">В GeoServer опубликовано ${c.published} из ${layers.length} слоёв серии.</div>`;
+  }
+  renderAll();
+});
+</script>
+</body>
+</html>

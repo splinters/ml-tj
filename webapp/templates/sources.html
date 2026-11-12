@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Источники данных — демо ML TJ{% endblock %}
+{% block body %}
+<h1>Источники данных</h1>
+<p class="lead">Происхождение каждого слоя, уровень привязки (точка, склад или участок СОЗ) и статус в модели или в индексе риска для детей.</p>
+
+<div class="scroll"><table class="data">
+  <thead><tr><th>Данные</th><th>Источник</th><th>Уровень</th><th>Статус</th><th>Где в БД</th><th>Примечание</th><th>Лицензия</th></tr></thead>
+  <tbody>
+  {% for s in sources %}
+  {% set st = status_labels[s.status] %}
+  <tr>
+    <td>{{ s.name }}</td>
+    <td>{{ s.provider }}</td>
+    <td>{{ s.level }}</td>
+    <td><span class="badge" style="background: {{ st[1] }}">{{ st[0] }}</span></td>
+    <td><code>{{ s.where }}</code></td>
+    <td>{{ s.note }}</td>
+    <td>{{ s.license }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="note">Лицензии указаны по условиям издателей источников; перед публикацией данных вовне их стоит перепроверить по первоисточнику.</p>
+
+<h2>Внешние сервисы, к которым обращается карта</h2>
+<p>Страницы стенда, кроме карты, работают без доступа в интернет. Карта (<code>/</code>) при открытии загружает подложки и слои из браузера:</p>
+<table class="data">
+  <thead><tr><th>Слой</th><th>Сервис</th></tr></thead>
+  <tbody>
+  {% for name, host in external %}<tr><td>{{ name }}</td><td>{{ host }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+<div class="info">Для работы в закрытом контуре эти слои заменяются локальными: растры публикуются через GeoServer (WMS), векторные подложки — из локального тайл-сервера. Эта замена относится к следующему этапу (публикация растров).</div>
+{% endblock %}

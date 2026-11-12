@@ -1,0 +1,47 @@
+# --- ядро ---
+numpy
+pandas
+scipy
+
+# --- геоданные ---
+geopandas
+shapely
+pyproj
+rasterio
+rioxarray
+fiona
+Pillow
+soilgrids
+
+# --- ML ---
+scikit-learn
+shap
+gstools
+
+# --- карты / вывод ---
+folium
+matplotlib
+mapclassify
+
+# --- открытые данные (страновые слои) ---
+requests
+pystac-client
+planetary-computer
+odc-stac
+pyarrow
+adlfs
+
+# --- БД ---
+sqlalchemy
+geoalchemy2
+psycopg2-binary
+python-dotenv
+
+# --- ноутбук ---
+jupyter
+notebook
+ipykernel
+
+# --- веб-приложение ---
+flask
+soilgrids

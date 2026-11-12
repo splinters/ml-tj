@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ T('Блокноты с расчётами','Notebooks') }}{% endblock %}
+{% block head %}
+<style>
+.nb-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin: 16px 0 28px; }
+.nb-card { background:#fff; border:1px solid #dcd8ce; border-radius:10px; padding:18px 20px; display:flex; flex-direction:column; gap:10px; }
+.nb-card h3 { margin:0; font-size:18px; line-height:1.3; }
+.nb-card p { margin:0; color:#4a5568; font-size:14px; line-height:1.5; }
+.nb-card .act { display:flex; gap:10px; margin-top:auto; flex-wrap:wrap; }
+.nb-card .act a { font-size:14px; }
+.nb-card .act a.main { background:#16253d; color:#fff; padding:7px 14px; border-radius:6px; text-decoration:none; }
+.nb-card .act a.main:hover { background:#1f6fb2; }
+.nb-tech { margin: 8px 0 0; padding-left: 20px; }
+.nb-tech li { margin: 6px 0; }
+.muted { color:#6a7280; font-size:13px; }
+</style>
+{% endblock %}
+{% block body %}
+<h1>{{ T('Блокноты с расчётами','Notebooks') }}</h1>
+<p>{{ T('Блокноты показывают методы моделей стенда на реальных данных: каждый график и таблица посчитаны из файлов проекта. Страницы статические — код на сервере не выполняется, интернет не нужен. В демонстрационных блокнотах код скрыт и раскрывается кнопкой «Показать код».',
+'The notebooks show the methods behind the stand models on real data: every chart and table is computed from project files. The pages are static: no code runs on the server and no internet is needed. In the demonstration notebooks the code is hidden and can be revealed with the “Show code” button.') }}</p>
+
+<h2>{{ T('Демонстрационные','Demonstration') }}</h2>
+<div class="nb-grid">
+{% for i in items if i.demo %}
+  <div class="nb-card">
+    <h3>{{ i.title }}</h3>
+    <p>{{ i.text }}</p>
+    <div class="act">
+      {% if i.has_html %}<a class="main" href="{{ request.script_root }}/notebooks/{{ i.stem }}">{{ T('Открыть','Open') }}</a>{% else %}<span class="muted">{{ T('страница не собрана','page not built') }}</span>{% endif %}
+      {% if i.has_ipynb %}<a href="{{ request.script_root }}/notebooks/ipynb/{{ i.ipynb_stem }}.ipynb">{{ T('Скачать .ipynb','Download .ipynb') }}</a>{% endif %}
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+<h2>{{ T('Технические (металлы)','Technical (metals, in Russian)') }}</h2>
+<ul class="nb-tech">
+{% for i in items if not i.demo %}
+  <li>{% if i.has_html %}<a href="{{ request.script_root }}/notebooks/{{ i.stem }}">{{ i.title }}</a>{% else %}{{ i.title }} <span class="muted">({{ T('не собран','not built') }})</span>{% endif %}
+      {% if i.has_ipynb %} · <a href="{{ request.script_root }}/notebooks/ipynb/{{ i.stem }}.ipynb">.ipynb</a>{% endif %}</li>
+{% endfor %}
+</ul>
+<p class="muted">{{ T('Пересборка страниц','Rebuilding the pages') }}: <code>cd notebooks && python build_html.py --out ../notebooks_html --execute</code></p>
+{% endblock %}

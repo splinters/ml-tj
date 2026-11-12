@@ -1,0 +1,11 @@
+attr_code,label_ru,value_type,allowed,unit,description,sort_order
+current_land_use,Текущее землепользование,enum,agricultural|residential|commercial|industrial|unused|mixed|unknown,,Как используется земля на территории склада сейчас.,10
+target_land_use,Землепользование после рекультивации,enum,agricultural|residential|commercial|industrial|unknown,,"Целевое использование после рекультивации. Только значения, подтверждённые заказчиком (документ или сообщение), меняют тип норматива в v_exceedance.",20
+privatized,Земля приватизирована,enum,yes|no|unknown,,Находится ли участок в частной собственности.,30
+post_remediation_holder,Кому передаётся после рекультивации,enum,current_owner|agri_authority|by_privatization_status|other|unknown,,"current_owner - нынешний собственник; agri_authority - Министерство сельского хозяйства или Комитет по земледелию; by_privatization_status - по статусу приватизации (собственнику, если приватизирована, иначе ведомству).",40
+residential_within_500m,Жилая застройка в радиусе 500 м,enum,yes|no|unknown,,,50
+nearest_residential_m,Расстояние до ближайшего жилья,number,,м,,60
+agri_within_500m,Сельхозугодья в радиусе 500 м,enum,yes|no|unknown,,,70
+nearest_agri_m,Расстояние до ближайших сельхозугодий,number,,м,,80
+nearest_canal_m,Расстояние до ближайшего канала или арыка,number,,м,,90
+industrial_within_500m,Промышленные объекты в радиусе 500 м,enum,yes|no|unknown,,,100

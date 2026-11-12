@@ -1,0 +1,159 @@
+<h1>Data cleaning and preparation</h1>
+<p class="lead">How the tables behind the stand's models and maps were produced from XRF field measurements and chemicals.tj portal materials. For each step: what was checked, what was fixed, and which script reproduces it.</p>
+
+<div class="callout">Common rules for both topics: source files are never modified; every value in the final tables refers to the document or measurement it came from; disputed cases are not deleted but flagged and kept in the data; all steps are performed by scripts and can be rerun from the source materials.</div>
+
+<h2>1. Heavy metals (XRF)</h2>
+
+<h3>1.1. Source data</h3>
+<ul>
+  <li>Field measurements with a portable X-ray fluorescence analyser (XRF): 10 warehouses, 169 points, 9 elements (As, Co, Hg, Mo, Pb, Rb, Th, U, Zn).</li>
+  <li>Warehouse outlines (polygons) and measurement point coordinates in GeoJSON.</li>
+  <li>Open data for model features: rivers and canals (OpenStreetMap), soil pH (SoilGrids), terrain, climate, population, land use, geology.</li>
+</ul>
+
+<h3>1.2. Loading and fixed format problems</h3>
+<table>
+  <tr><th>Problem</th><th>Symptom</th><th>Solution</th></tr>
+  <tr><td>Cyrillic file names</td><td>different Unicode normalisation on macOS (NFC/NFD): files were silently not found</td><td>files renamed to Latin characters</td></tr>
+  <tr><td>Duplicate <code>name</code> column in GeoJSON</td><td>name conflict when renaming fields</td><td>only the required columns are selected before renaming</td></tr>
+  <tr><td>Three-dimensional coordinates (EPSG:4979, Z = 0)</td><td>mismatch with the database coordinate system (EPSG:4326)</td><td>coordinates are converted to 2D before writing</td></tr>
+  <tr><td>The Kushoniyon warehouse outline duplicated the Shahrinav outline</td><td>found when cross-checking geometries at an early stage</td><td>outline replaced; the 50 and 100 m buffers are built from the outline automatically (a database view) rather than stored separately, so the geometries cannot diverge</td></tr>
+</table>
+<p>Loading script: <code>db/import_data.py</code>.</p>
+
+<h3>1.3. Geometry checks</h3>
+<ul>
+  <li>All 10 outlines were checked for validity and self-intersections, and all 45 pairs of outlines for overlaps and buffer nesting (<code>db/qc_geometry.py</code>). No issues found.</li>
+  <li>Warehouse areas range from 0.05 to 1.07 ha.</li>
+  <li>49 of 169 points lie inside an outline; for points outside, the median distance to the outline is 49 m, 11 points are more than 100 m away, the farthest 126 m. Points outside the outline are not removed: the signed distance to the outline (inside/outside) and the zone (inside, up to 50 m, up to 100 m, beyond) are used as model features.</li>
+</ul>
+
+<h3>1.4. Values</h3>
+<ul>
+  <li>Values below the detection limit are not discarded: they are replaced with half the limit (LOD/2) and flagged <code>below_lod</code>.</li>
+  <li>The model uses the logarithm of concentration minus the median logarithm of its warehouse. The model thus learns the position of the hotspot within the warehouse, not differences between warehouses; with 10 warehouses an absolute country-wide prediction is not feasible.</li>
+  <li>For portable XRF the detection limits for arsenic and mercury are close to the standards, so exceedances of As and Hg are treated as a signal for laboratory verification. XRF is reliable for lead and zinc.</li>
+</ul>
+
+<h3>1.5. Open-data features</h3>
+<p>All candidates are collected and stored in the database: distance to water, pH, slope, elevation, population, land use, geology, flow accumulation, climate. Each was tested with the same scheme: training on 9 warehouses, testing on the tenth (LOWO). Only features that do not degrade performance in combination entered the model: distance to water per point (OpenStreetMap) and soil pH per warehouse (SoilGrids). One warehouse has no pH value; the sample mean is used. Details and test results are on the "Methodology: metals" page.</p>
+<p>Scripts: <code>db/fetch_point_covariates.py</code>, <code>db/fetch_landcover_population.py</code>, <code>db/diagnose_features.py</code>, <code>db/scan_all_substances.py</code>.</p>
+
+<h3>1.6. Derived tables</h3>
+<ul>
+  <li>Warehouse priority: <code>db/rank_sites_priority.py</code>, a composite index over Pb, As, Hg, Zn (log excess over the median of the whole survey).</li>
+  <li>Contamination zones within a warehouse: <code>db/build_risk_zones.py</code>, from the actual points, without interpolation.</li>
+  <li>Pb model: <code>db/run_model_and_store.py</code>.</li>
+  <li>Export for notebooks without a database: <code>db/export_geopackage.py</code> → <code>tajikistan_soil_ml_export.gpkg</code>.</li>
+</ul>
+
+<h2>2. POPs pesticide sites (chemicals.tj)</h2>
+
+<h3>2.1. Source data</h3>
+<p>The client has no structured tables. All information comes from the public part of the chemicals.tj portal:</p>
+<ul>
+  <li>the map: 192 sites of type "POPs" with coordinates and status ("contaminated" / "cleaned up");</li>
+  <li>a survey form for each site with about 50 fields: area, odour, pit, access, water, groundwater, residents in 50/100/500 m rings, etc.;</li>
+  <li>a text description of the site;</li>
+  <li>attachments: photos, laboratory protocols, sampling logs and registers, reports.</li>
+</ul>
+<p>Export script: <code>db/fetch_chemicals_tj.py --download-docs</code>.</p>
+
+<h3>2.2. Documents</h3>
+<ul>
+  <li>The same documents are attached to different sites. Copies were merged by file checksum and by matching extracted text: 245 distinct documents remained out of 373 attachments.</li>
+  <li>Documents were classified as laboratory protocol, sampling log or register, report, or other. Whether the PDF has a text layer was recorded.</li>
+</ul>
+
+<h3>2.3. Extraction of analyses</h3>
+<table>
+  <tr><th>Document type</th><th>How it is extracted</th><th>Check</th></tr>
+  <tr><td>Text PDFs (AFI protocol No. 8, ILIM report No. 42, Institute of Chemistry table of 2012, logs)</td><td>table parsing by templates; logs come in several templates, including blocks covering several sites</td><td>every value was found verbatim in the text of its document; 32 cases where figures overlap with text from a neighbouring column are flagged</td></tr>
+  <tr><td>Scans without a text layer (AFI protocol No. 126 with 286 samples; Institute of Chemistry letter of 2017)</td><td>transcribed manually into <code>manual/*.csv</code> tables with notes on typos in the original</td><td>the 2019 logs matched protocol No. 126 for 229 of 233 "site × substance" sets</td></tr>
+</table>
+<p>Script: <code>db/extract_pop_tables.py</code> → <code>extracted/measurements_long.csv</code>.</p>
+
+<h3>2.4. Harmonisation</h3>
+<ul>
+  <li>The unit is mg/kg. Substance names are mapped to a single dictionary: DDT, DDD, DDE, HCH isomers (α, β, γ, δ), aldrin, dieldrin, heptachlor, etc.</li>
+  <li>"Not detected" is stored as a separate flag and counts as zero in group totals.</li>
+  <li>Log columns without a substance name are kept in separate fields and do not enter the contamination indicator.</li>
+  <li>The site contamination indicator is the maximum over samples of two totals: DDT+DDD+DDE and total HCH isomers.</li>
+</ul>
+<div class="callout">A fixed build error: if one substance of a group was "not detected" in a sample, the group total became empty, and some sites lost their contamination value. After the fix the number of sites with analyses rose from 159 to 169; the model, risk index, sampling plan and audit were recalculated.</div>
+
+<h3>2.5. Duplicates between sources</h3>
+<p>The same sample often appears both in a sampling log and in a laboratory protocol. Each value is assigned a source rank:</p>
+<table>
+  <tr><th>Rank</th><th>Source</th><th>In the consolidated sample</th></tr>
+  <tr><td class="n">1</td><td>laboratory protocol</td><td>yes</td></tr>
+  <tr><td class="n">2</td><td>log or register, if the sample is not in any protocol</td><td>yes</td></tr>
+  <tr><td class="n">0</td><td>log duplicating a protocol</td><td>no, kept in the data with a flag</td></tr>
+</table>
+<p>Where values differ, the protocol goes into the consolidated sample. The 2020 registers matched protocol No. 8 for 47 of 48 sites. Result: 586 samples and 2823 concentration values without duplicates; 4572 values were extracted in total.</p>
+
+<h3>2.6. Sample coordinates</h3>
+<p>Laboratory protocols contain no coordinates. Coordinates were transferred from logs and registers of the same site, and the method is recorded for each sample:</p>
+<ul>
+  <li>by matching the DDT value in the log and the protocol (protocol No. 126);</li>
+  <li>by the order of replicates T1/T2/K3 in the register (protocol No. 8);</li>
+  <li>by sample number (ILIM report, 2016);</li>
+  <li>from the log itself, if it gives coordinates.</li>
+</ul>
+<p>This gave coordinates for 462 samples; the median distance from a sample to the site point is about 30 m. Samples without coordinates are placed at the site point with a flag; sites that are not on the map remain without geometry.</p>
+
+<h3>2.7. Site code matching</h3>
+<p>Protocol No. 126 records 12 sites under field codes tj77xx that do not exist on the map. Nine of them were confidently linked to map cards by village name (table <code>manual/protocol126_map_links.csv</code>); 3 remain ambiguous and are kept in the layer as separate sites without coordinates. Code TJ-7580 is used twice on the map for different cards; the sites differ by coordinates.</p>
+
+<h3>2.8. Information from card text</h3>
+<p>About 2200 facts were extracted from text descriptions by patterns: distances to housing, water, roads, crops, a school and a well; numbers of residents, children, families and houses; quantity of pesticides, area; mentions of children, livestock, crops, drinking water, health complaints, remediation. For each fact the source text fragment is kept so that it can be checked.</p>
+
+<h3>2.9. Open-data features</h3>
+<p>For each site the following were computed from local rasters (no internet requests): soil pH (SoilGrids), elevation and slope (150 m terrain), population within ~500 m and 1 km (WorldPop 2020), flow accumulation, mean annual temperature and precipitation (WorldClim 2.1). Script: <code>db/pop_site_covariates.py</code>.</p>
+
+<h3>2.10. Audit of portal data quality</h3>
+<p>As a by-product of the preparation, a list of problems in the portal itself was compiled, with evidence and the action needed to fix each (<code>audit/data_quality_audit.csv</code>, script <code>db/pop_data_audit.py</code>): 63 problems, 16 of them of high importance.</p>
+<table>
+  <tr><th>Category</th><th class="n">Problems</th><th>Examples</th></tr>
+  <tr><td>Identification</td><td class="n">19</td><td>repeated code TJ-7580; protocol codes not on the map; near-duplicate sites</td></tr>
+  <tr><td>Coordinates</td><td class="n">13</td><td>samples more than 2 km from the site point; swapped latitude and longitude headers; low precision</td></tr>
+  <tr><td>Analyses</td><td class="n">10</td><td>discrepancies between log and protocol; columns without a substance name</td></tr>
+  <tr><td>Status</td><td class="n">9</td><td>six sites are marked "cleaned up", but analyses show contamination above the standard</td></tr>
+  <tr><td>Documents</td><td class="n">7</td><td>logs attached to other sites; scans without a text layer</td></tr>
+  <tr><td>Other</td><td class="n">5</td><td>different log templates, empty survey-form fields, service text in descriptions</td></tr>
+</table>
+
+<h3>2.11. Result</h3>
+<p>The layer <code>source_data/chemicals_tj/pop_layer/pop_layer.gpkg</code> and the same tables as CSV; field descriptions in <code>data_dictionary.md</code> (in Russian).</p>
+<table>
+  <tr><th>Layer</th><th>Contents</th></tr>
+  <tr><td><code>pop_sites</code></td><td>sites: survey form, contamination summary, facts from text, links to documents</td></tr>
+  <tr><td><code>pop_samples</code></td><td>samples of the consolidated set, substances in separate columns, coordinate source</td></tr>
+  <tr><td><code>pop_measurements</code></td><td>all extracted "sample × substance" values, including duplicates (rank 0)</td></tr>
+  <tr><td><code>pop_text_facts</code></td><td>fact from text and its source fragment</td></tr>
+  <tr><td><code>pop_files</code></td><td>all site attachments with links</td></tr>
+  <tr><td><code>pop_sources</code></td><td>sources of laboratory data</td></tr>
+</table>
+
+<h2>3. How to reproduce</h2>
+<p>Metals (requires the stand's PostgreSQL/PostGIS database):</p>
+<pre><code>python db/import_data.py
+python db/qc_geometry.py
+python db/fetch_point_covariates.py
+python db/rank_sites_priority.py
+python db/build_risk_zones.py
+python db/run_model_and_store.py "reason for the rerun"
+python db/export_geopackage.py</code></pre>
+<p>POPs (files only, no database needed):</p>
+<pre><code>python db/fetch_chemicals_tj.py --download-docs
+python db/extract_pop_tables.py
+python db/build_pop_layer.py
+python db/pop_site_covariates.py
+python db/pop_screening_model.py          # can be interrupted and resumed
+python db/pop_screening_model.py final
+python db/pop_child_risk_index.py
+python db/pop_data_audit.py
+python db/pop_sampling_plan.py
+python db/pop_metals_link.py</code></pre>
+<p>The first step accesses the chemicals.tj portal; the rest work offline.</p>
